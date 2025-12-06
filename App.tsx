@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { MarketProvider } from './context/MarketContext';
+import { initBack4App } from './services/back4app';
 import { Layout } from './components/Layout';
 import { Home } from './pages/Home';
 import { Catalog } from './pages/Catalog';
@@ -22,6 +23,9 @@ const App: React.FC = () => {
   const [showIntro, setShowIntro] = useState(true);
 
   useEffect(() => {
+    // Инициализировать Back4App при загрузке приложения
+    initBack4App();
+    
     const hasSeenIntro = sessionStorage.getItem('hasSeenIntro');
     // if (hasSeenIntro) setShowIntro(false);
   }, []);

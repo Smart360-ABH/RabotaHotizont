@@ -18,6 +18,15 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve('.'),
         }
+      },
+      // Optimize dependencies for Parse SDK
+      optimizeDeps: {
+        include: ['parse'],
+        esbuildOptions: {
+          define: {
+            global: 'globalThis'
+          }
+        }
       }
     };
 });

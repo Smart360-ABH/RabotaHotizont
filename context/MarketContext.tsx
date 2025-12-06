@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Product, CartItem, User, VendorPublicProfile, Review, OrderDetails, OrderStatus, VendorProfile } from '../types';
 import { api } from '../services/api';
+import { Back4App, isBack4AppConfigured } from '../services/back4app';
 import { MOCK_VENDORS, MOCK_REVIEWS } from '../constants';
 
 interface MarketContextType {
@@ -36,6 +37,7 @@ interface MarketContextType {
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   
   login: (role: 'user' | 'admin' | 'vendor') => void;
+  loginWithCredentials: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   updateUserRole: (userId: string, role: 'user' | 'admin' | 'vendor') => void;
   blockUser: (userId: string, isBlocked: boolean) => void;
@@ -95,6 +97,30 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } else {
         const hour = new Date().getHours();
         if (hour >= 21 || hour < 6) setIsDarkMode(true);
+    }
+
+    // Restore Parse session if Back4App is configured
+    if (isBack4AppConfigured) {
+      const currentUser = Back4App.getCurrentUserJson();
+      if (currentUser) {
+        const appUser: User = {
+          id: currentUser.objectId,
+          name: currentUser.name,
+          email: currentUser.email,
+          role: (currentUser.role || 'user') as 'user' | 'admin' | 'vendor',
+          vendorId: currentUser.vendorId,
+        };
+        setUser(appUser);
+        localStorage.setItem('user', JSON.stringify(appUser));
+      } else {
+        // Try to restore from localStorage as fallback
+        const savedUser = localStorage.getItem('user');
+        if (savedUser) setUser(JSON.parse(savedUser));
+      }
+    } else {
+      // Fallback to localStorage in non-Back4App mode
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) setUser(JSON.parse(savedUser));
     }
   }, []);
 
@@ -234,14 +260,70 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const login = async (role: 'user' | 'admin' | 'vendor') => {
     // In a real app, this would fetch from API. Here we just find/create mock
     const mockUser = users.find(u => u.role === role);
-    if (mockUser) setUser(mockUser);
+    if (mockUser) {
+      setUser(mockUser);
+      localStorage.setItem('user', JSON.stringify(mockUser));
+    }
     else {
         // Fallback for demo if mock user deleted
-        setUser({ id: 'u_demo', name: 'Demo User', email: 'user@store.com', role });
+        const demoUser: User = { id: 'u_demo', name: 'Demo User', email: 'user@store.com', role };
+        setUser(demoUser);
+        localStorage.setItem('user', JSON.stringify(demoUser));
     }
   };
 
-  const logout = () => setUser(null);
+  /**
+   * Вход с email и паролем через Back4App (или fallback в мок-режиме)
+   */
+  const loginWithCredentials = async (email: string, password: string): Promise<boolean> => {
+    try {
+      if (isBack4AppConfigured) {
+        // Используем Back4App для реальной аутентификации
+        const back4appUser = await Back4App.login(email, password);
+        if (back4appUser) {
+          const appUser: User = {
+            id: back4appUser.objectId,
+            name: back4appUser.name,
+            email: back4appUser.email,
+            role: (back4appUser.role || 'user') as 'user' | 'admin' | 'vendor',
+            vendorId: back4appUser.vendorId,
+          };
+          setUser(appUser);
+          localStorage.setItem('user', JSON.stringify(appUser));
+          return true;
+        }
+        return false;
+      } else {
+        // Мок-режим: проверяем email и устанавливаем роль
+        console.log('[Auth] Using mock mode for:', email);
+        let role: 'user' | 'admin' | 'vendor' = 'user';
+        if (email.includes('admin')) role = 'admin';
+        if (email.includes('vendor')) role = 'vendor';
+
+        const mockUser: User = {
+          id: `u_${Date.now()}`,
+          name: email.split('@')[0],
+          email,
+          role,
+        };
+        setUser(mockUser);
+        localStorage.setItem('user', JSON.stringify(mockUser));
+        return true;
+      }
+    } catch (error) {
+      console.error('[Auth] Login error:', error);
+      return false;
+    }
+  };
+
+  const logout = async () => {
+    if (isBack4AppConfigured) {
+      await Back4App.logout();
+    }
+    setUser(null);
+    localStorage.removeItem('user');
+    setCart([]);
+  };
 
   const updateUserRole = (userId: string, role: 'user' | 'admin' | 'vendor') => {
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u));
@@ -260,7 +342,7 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         addReview, deleteReview,
         getVendorById, registerVendor, updateVendorStatus,
         addOrder, updateOrderStatus,
-        login, logout, updateUserRole, blockUser,
+        login, loginWithCredentials, logout, updateUserRole, blockUser,
         searchQuery, setSearchQuery, isDarkMode, toggleTheme
       }}
     >

@@ -21,36 +21,37 @@ export const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
-  const { login } = useMarket();
+  const { login, loginWithCredentials } = useMarket();
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Simulate API delay
-    setTimeout(() => {
+    try {
+      // Используем loginWithCredentials из контекста, который поддерживает Back4App
+      const success = await loginWithCredentials(email, password);
+      
+      if (success) {
         setIsLoading(false);
-        if (email === 'admin@store.com' && password === 'admin') {
-          login('admin');
+        // Определяем роль по email для переадресации (в Back4App это будет в userData)
+        if (email.includes('admin')) {
           navigate('/admin');
-        } else if (email === 'vendor@store.com' && password === 'vendor') {
-          login('vendor');
+        } else if (email.includes('vendor')) {
           navigate('/vendor');
-        } else if (email === 'user@store.com' && password === 'user') {
-          login('user');
-          navigate('/');
         } else {
-          // Allow any other login for demo purposes if not specific mock users
-          if (email && password) {
-              login('user'); // Default to user role for new inputs
-              navigate('/');
-          } else {
-              setError('Неверный email или пароль');
-          }
+          navigate('/');
         }
-    }, 800);
+      } else {
+        setIsLoading(false);
+        setError('Ошибка входа. Проверьте email и пароль.');
+      }
+    } catch (err) {
+      setIsLoading(false);
+      console.error('[Login] Error:', err);
+      setError('Ошибка входа. Попробуйте позже.');
+    }
   };
 
   const handleRegister = (e: React.FormEvent) => {

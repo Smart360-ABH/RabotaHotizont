@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMarket } from '../context/MarketContext';
 import { ProductCard } from '../components/ProductCard';
+import { Back4App, isBack4AppConfigured } from '../services/back4app';
 import { 
   User, Package, MapPin, Heart, CreditCard, LogOut, 
   Settings, QrCode, ChevronRight, Gift, ShieldCheck
@@ -24,8 +25,76 @@ type ProfileTab = 'dashboard' | 'orders' | 'settings' | 'addresses' | 'favorites
 export const Profile: React.FC = () => {
   const { user, logout, products, favorites } = useMarket();
   const [activeTab, setActiveTab] = useState<ProfileTab>('dashboard');
+  
+  // Form state for settings tab
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    birthDate: '',
+    gender: 'male' as 'male' | 'female'
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
 
   const favoriteProducts = products.filter(p => favorites.includes(p.id));
+
+  // Populate form from Back4App on mount
+  useEffect(() => {
+    if (isBack4AppConfigured && user) {
+      const back4appUser = Back4App.getCurrentUserJson();
+      if (back4appUser) {
+        setFormData({
+          name: back4appUser.name || user.name,
+          phone: back4appUser.phone || '',
+          email: back4appUser.email || user.email,
+          birthDate: '',
+          gender: 'male'
+        });
+      }
+    }
+  }, [user]);
+
+  // Handle settings save
+  const handleSaveSettings = async () => {
+    setIsSaving(true);
+    setSaveMessage('');
+
+    try {
+      if (isBack4AppConfigured) {
+        // Save to Back4App
+        const result = await Back4App.updateCurrentUser({
+          name: formData.name,
+          phone: formData.phone,
+        });
+        
+        if (result) {
+          setSaveMessage('✓ Изменения сохранены');
+          // Update localStorage as fallback
+          localStorage.setItem('user', JSON.stringify({
+            ...user,
+            name: formData.name,
+            email: formData.email
+          }));
+        } else {
+          setSaveMessage('✗ Ошибка при сохранении');
+        }
+      } else {
+        // Mock mode: just save to localStorage
+        localStorage.setItem('user', JSON.stringify({
+          ...user,
+          name: formData.name,
+          email: formData.email
+        }));
+        setSaveMessage('✓ Изменения сохранены (режим демо)');
+      }
+    } catch (error) {
+      console.error('[Profile] Save error:', error);
+      setSaveMessage('✗ Ошибка при сохранении');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // If not logged in (though protected by route usually, handle graceful fallback)
   if (!user) {
@@ -62,11 +131,11 @@ export const Profile: React.FC = () => {
             {/* User Info Mini */}
             <div className="flex items-center gap-3 px-2 mb-6 pt-2">
               <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xl">
-                {user.name[0]}
+                {(user.name || 'U')[0]}
               </div>
               <div className="overflow-hidden">
-                <div className="font-bold truncate dark:text-white">{user.name}</div>
-                <div className="text-xs text-gray-500 truncate">{user.email}</div>
+                <div className="font-bold truncate dark:text-white">{user.name || 'Unknown'}</div>
+                <div className="text-xs text-gray-500 truncate">{user.email || 'no-email'}</div>
               </div>
             </div>
 
@@ -244,34 +313,81 @@ export const Profile: React.FC = () => {
                       <div className="grid grid-cols-2 gap-4">
                           <div>
                               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Имя</label>
-                              <input type="text" defaultValue={user.name} className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg"/>
+                              <input 
+                                  type="text" 
+                                  value={formData.name}
+                                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                  className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                              />
                           </div>
                           <div>
                               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Телефон</label>
-                              <input type="text" defaultValue="+7 940 999 99 99" className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg"/>
+                              <input 
+                                  type="text" 
+                                  value={formData.phone}
+                                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                  placeholder="+7 (999) 999-99-99"
+                                  className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                              />
                           </div>
                       </div>
                       <div>
                           <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
-                          <input type="email" defaultValue={user.email} className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg"/>
+                          <input 
+                              type="email" 
+                              value={formData.email}
+                              disabled
+                              className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg bg-gray-50 dark:bg-slate-900 cursor-not-allowed opacity-70"
+                          />
+                          <p className="text-xs text-gray-400 mt-1">Email нельзя изменить</p>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                           <div>
                               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Дата рождения</label>
-                              <input type="date" className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg"/>
+                              <input 
+                                  type="date" 
+                                  value={formData.birthDate}
+                                  onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+                                  className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                              />
                           </div>
                           <div>
                               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Пол</label>
-                              <select className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg">
-                                  <option>Мужской</option>
-                                  <option>Женский</option>
+                              <select 
+                                  value={formData.gender}
+                                  onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'male' | 'female' })}
+                                  className="w-full p-2 border dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                              >
+                                  <option value="male">Мужской</option>
+                                  <option value="female">Женский</option>
                               </select>
                           </div>
                       </div>
+
+                      {saveMessage && (
+                          <div className={`p-3 rounded-lg text-sm font-medium ${
+                            saveMessage.includes('✓') 
+                              ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300' 
+                              : 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                          }`}>
+                              {saveMessage}
+                          </div>
+                      )}
                       
                       <div className="pt-4">
-                          <button className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition">
-                              Сохранить изменения
+                          <button 
+                              onClick={handleSaveSettings}
+                              disabled={isSaving}
+                              className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                          >
+                              {isSaving ? (
+                                  <>
+                                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                      Сохранение...
+                                  </>
+                              ) : (
+                                  'Сохранить изменения'
+                              )}
                           </button>
                       </div>
                   </div>
