@@ -53,26 +53,6 @@ export const initBack4App = (appId?: string, jsKey?: string): boolean => {
 // Это избегает ошибок если Parse не может загруститься
 
 // ============================================================================
-// ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ИНИЦИАЛИЗАЦИИ
-// ============================================================================
-
-/**
- * Проверяет, что Back4App готов к использованию.
- * Возвращает false если Parse не инициализирован.
- */
-const ensureInitialized = (): boolean => {
-  if (!isBack4AppReady) {
-    console.warn('[Back4App] Back4App not initialized. Using fallback mode.');
-    return false;
-  }
-  if (!Parse || !Parse.User || !Parse.Query) {
-    console.warn('[Back4App] Parse SDK not fully loaded');
-    return false;
-  }
-  return true;
-};
-
-// ============================================================================
 // ТИПЫ ДАННЫХ
 // ============================================================================
 
@@ -129,11 +109,11 @@ export interface OrderData {
  */
 export const login = async (email: string, password: string): Promise<UserData | null> => {
   try {
-    if (!isBack4AppReady || !Parse || !Parse.User) {
-      console.warn('[Back4App] Parse not initialized');
+    if (!isBack4AppReady) {
+      console.warn('[Back4App] Not initialized.');
       return null;
     }
-    
+
     const user = await Parse.User.logIn(email, password);
     return {
       objectId: user.id,
@@ -158,11 +138,7 @@ export const login = async (email: string, password: string): Promise<UserData |
  */
 export const logout = async (): Promise<void> => {
   try {
-    if (!isBack4AppReady || !Parse || !Parse.User) {
-      console.warn('[Back4App] Parse not initialized');
-      return;
-    }
-    
+    if (!isBack4AppReady) return;
     await Parse.User.logOut();
     console.log('[Back4App] Logged out successfully.');
   } catch (error) {
@@ -183,10 +159,7 @@ export const logout = async (): Promise<void> => {
  */
 export const getCurrentUserJson = (): UserData | null => {
   try {
-    if (!Parse || !Parse.User) {
-      console.warn('[Back4App] Parse.User not available');
-      return null;
-    }
+    if (!isBack4AppReady) return null;
     
     const user = Parse.User.current();
     if (!user) return null;
@@ -200,7 +173,7 @@ export const getCurrentUserJson = (): UserData | null => {
       avatar: user.get('avatar'),
     };
   } catch (error) {
-    console.error('[Back4App] getCurrentUserJson error:', error);
+    console.warn('[Back4App] getCurrentUserJson error:', error);
     return null;
   }
 };
@@ -219,11 +192,11 @@ export const getCurrentUserJson = (): UserData | null => {
  */
 export const updateCurrentUser = async (updates: Partial<UserData>): Promise<UserData | null> => {
   try {
-    if (!isBack4AppReady || !Parse || !Parse.User) {
-      console.warn('[Back4App] Parse not initialized');
+    if (!isBack4AppReady) {
+      console.warn('[Back4App] Not initialized.');
       return null;
     }
-    
+
     const user = Parse.User.current();
     if (!user) {
       console.warn('[Back4App] No user logged in.');
@@ -270,11 +243,6 @@ export const updateCurrentUser = async (updates: Partial<UserData>): Promise<Use
  */
 export const getProducts = async (): Promise<ProductData[]> => {
   try {
-    if (!isBack4AppReady || !Parse || !Parse.Query) {
-      console.warn('[Back4App] Parse not initialized');
-      return [];
-    }
-    
     const query = new Parse.Query('Product');
     const results = await query.find();
     return results.map((obj) => ({
@@ -308,8 +276,6 @@ export const getProducts = async (): Promise<ProductData[]> => {
  */
 export const getProductById = async (id: string): Promise<ProductData | null> => {
   try {
-    if (!ensureInitialized()) return null;
-    
     const query = new Parse.Query('Product');
     const result = await query.get(id);
     return {
@@ -346,8 +312,6 @@ export const getProductById = async (id: string): Promise<ProductData | null> =>
  */
 export const createProduct = async (product: ProductData): Promise<ProductData | null> => {
   try {
-    if (!ensureInitialized()) return null;
-    
     const ProductClass = Parse.Object.extend('Product');
     const obj = new ProductClass();
     
@@ -389,8 +353,6 @@ export const createProduct = async (product: ProductData): Promise<ProductData |
  */
 export const updateProduct = async (objectId: string, updates: Partial<ProductData>): Promise<ProductData | null> => {
   try {
-    if (!ensureInitialized()) return null;
-    
     const query = new Parse.Query('Product');
     const obj = await query.get(objectId);
 
@@ -431,8 +393,6 @@ export const updateProduct = async (objectId: string, updates: Partial<ProductDa
  */
 export const deleteProduct = async (objectId: string): Promise<boolean> => {
   try {
-    if (!ensureInitialized()) return false;
-    
     const query = new Parse.Query('Product');
     const obj = await query.get(objectId);
     await obj.destroy();
@@ -459,8 +419,6 @@ export const deleteProduct = async (objectId: string): Promise<boolean> => {
  */
 export const queryProducts = async (filters: { [key: string]: any }): Promise<ProductData[]> => {
   try {
-    if (!ensureInitialized()) return [];
-    
     const query = new Parse.Query('Product');
 
     // Фильтры по цене
@@ -514,8 +472,6 @@ export const queryProducts = async (filters: { [key: string]: any }): Promise<Pr
  */
 export const createOrder = async (order: OrderData): Promise<OrderData | null> => {
   try {
-    if (!ensureInitialized()) return null;
-    
     const OrderClass = Parse.Object.extend('Order');
     const obj = new OrderClass();
 
