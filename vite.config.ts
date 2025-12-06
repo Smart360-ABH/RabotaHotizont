@@ -40,7 +40,9 @@ export default defineConfig(({ mode }) => {
               if (id.includes('node_modules')) {
                 if (id.includes('parse')) return 'vendor_parse';
                 if (id.includes('@google/genai')) return 'vendor_genai';
-                if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom') || id.includes('recharts') || id.includes('lucide-react')) return 'vendor_react';
+                if (id.includes('recharts')) return 'vendor_recharts';
+                if (id.includes('lucide-react')) return 'vendor_lucide';
+                if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) return 'vendor_react';
                 return 'vendor_misc';
               }
             }
