@@ -28,5 +28,24 @@ export default defineConfig(({ mode }) => {
           }
         }
       }
+      ,
+      build: {
+        // disable sourcemaps in production to reduce build size
+        sourcemap: false,
+        // increase warning limit to focus on real issues; chunking will try to reduce sizes
+        chunkSizeWarningLimit: 1500,
+        rollupOptions: {
+          output: {
+            manualChunks(id: string) {
+              if (id.includes('node_modules')) {
+                if (id.includes('parse')) return 'vendor_parse';
+                if (id.includes('@google/genai')) return 'vendor_genai';
+                if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom') || id.includes('recharts') || id.includes('lucide-react')) return 'vendor_react';
+                return 'vendor_misc';
+              }
+            }
+          }
+        }
+      }
     };
 });
