@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 // Load envs
-dotenv.config({ path: path.resolve(__dirname, '../server/.env') });
+dotenv.config({ path: path.resolve(process.cwd(), 'server/.env') });
 
 const APP_ID = process.env.PARSE_APP_ID;
 const REST_KEY = process.env.PARSE_REST_KEY;

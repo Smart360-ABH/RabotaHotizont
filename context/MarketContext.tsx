@@ -187,20 +187,38 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           if (Array.isArray(vendorUsers)) vResults = vendorUsers;
           else if (vendorUsers && Array.isArray((vendorUsers as any).results)) vResults = (vendorUsers as any).results;
 
-          const realVendors = vResults.map((u: any) => ({
-            id: u.objectId,
-            name: u.companyName || u.username || 'Unknown Vendor',
-            description: u.description || `Магазин ${u.username}`,
-            image: u.avatar?.url || 'https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?auto=format&fit=crop&w=200&q=80',
-            rating: 5.0, // Default for new vendors
-            joinedDate: u.createdAt,
-            status: 'active',
-            vendorId: u.objectId,
-            revenue: 0,
-            coverImage: u.coverImage?.url
-          }));
+          const realVendors = vResults.map((u: any) => {
+            // Handle both Parse object and plain JSON responses
+            const objectId = u.id || u.objectId;
+            const username = typeof u.get === 'function' ? u.get('username') : u.username;
+            const companyName = typeof u.get === 'function' ? u.get('companyName') : u.companyName;
+            const description = typeof u.get === 'function' ? u.get('description') : u.description;
+            const avatar = typeof u.get === 'function' ? u.get('avatar') : u.avatar;
+            const coverImage = typeof u.get === 'function' ? u.get('coverImage') : u.coverImage;
 
-          setVendors([...MOCK_VENDORS, ...realVendors]);
+            return {
+              id: objectId,
+              name: companyName || username || 'Unknown Vendor',
+              description: description || `Магазин ${username}`,
+              image: avatar?.url || 'https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?auto=format&fit=crop&w=200&q=80',
+              rating: 5.0,
+              joinedDate: u.createdAt,
+              status: 'active',
+              vendorId: objectId,
+              revenue: 0,
+              coverImage: coverImage?.url
+            };
+          });
+
+          console.log(`[MarketContext] Loaded ${realVendors.length} real vendors + ${MOCK_VENDORS.length} mock vendors`);
+          console.log('[MarketContext] Real vendors:', realVendors.map(v => ({ id: v.id, name: v.name })));
+          console.log('[MarketContext] Mock vendors:', MOCK_VENDORS.map(v => ({ id: v.id, name: v.name })));
+
+          const allVendors = [...MOCK_VENDORS, ...realVendors];
+          setVendors(allVendors);
+
+          console.log('[MarketContext] Total vendors in state:', allVendors.length);
+          console.log('[MarketContext] Vendor IDs:', allVendors.map(v => v.id));
         } catch (err) {
           console.warn('Failed to load vendors', err);
           setVendors(MOCK_VENDORS);
@@ -476,7 +494,11 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // --- VENDORS ---
   const getVendorById = (id: string) => {
-    return vendors.find(v => v.id === id);
+    const found = vendors.find(v => v.id === id);
+    if (!found) {
+      console.warn(`[getVendorById] Vendor not found for ID: ${id}. Available IDs:`, vendors.map(v => v.id));
+    }
+    return found;
   };
 
   const registerVendor = (data: VendorProfile & { name: string }) => {

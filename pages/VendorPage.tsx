@@ -44,19 +44,28 @@ export const VendorPage: React.FC = () => {
             setIsLoading(true);
             try {
                 // Try fetching as User first (since vendors are Users with role='vendor')
-                // Note: getUserById in back4appRest typically fetches _User class
                 const u = await back4app.getUserById(id);
-                if (u && (u.role === 'vendor' || u.get('role') === 'vendor')) {
+
+                // Handle both Parse object and plain JSON responses
+                const role = typeof u.get === 'function' ? u.get('role') : u.role;
+                const objectId = u.id || u.objectId;
+                const username = typeof u.get === 'function' ? u.get('username') : u.username;
+                const companyName = typeof u.get === 'function' ? u.get('companyName') : u.companyName;
+                const description = typeof u.get === 'function' ? u.get('description') : u.description;
+                const avatar = typeof u.get === 'function' ? u.get('avatar') : u.avatar;
+                const coverImage = typeof u.get === 'function' ? u.get('coverImage') : u.coverImage;
+
+                if (u && role === 'vendor') {
                     setLocalVendor({
-                        id: u.id || u.objectId,
-                        name: u.get('companyName') || u.get('username') || 'Unknown Vendor',
-                        description: u.get('description') || `Магазин ${u.get('username')}`,
-                        image: u.get('avatar')?.url || 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?auto=format&fit=crop&w=200&q=80',
-                        coverImage: u.get('coverImage')?.url,
+                        id: objectId,
+                        name: companyName || username || 'Unknown Vendor',
+                        description: description || `Магазин ${username}`,
+                        image: avatar?.url || 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?auto=format&fit=crop&w=200&q=80',
+                        coverImage: coverImage?.url,
                         rating: 5.0,
                         joinedDate: u.createdAt,
                         status: 'active',
-                        vendorId: u.id || u.objectId,
+                        vendorId: objectId,
                         revenue: 0
                     });
                 }

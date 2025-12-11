@@ -410,7 +410,7 @@ export async function getVendorById(vendorId: string) {
     const query = new Parse.Query(Vendor);
     return query.get(vendorId);
   }
-  return parseRequest(`/ classes / Vendor / ${vendorId} `);
+  return parseRequest(`/classes/Vendor/${vendorId}`);
 }
 
 export async function updateVendor(vendorId: string, fields: Record<string, any>) {
@@ -421,7 +421,7 @@ export async function updateVendor(vendorId: string, fields: Record<string, any>
     await vendor.save();
     return vendor;
   }
-  return parseRequest(`/ classes / Vendor / ${vendorId} `, 'PUT', fields);
+  return parseRequest(`/classes/Vendor/${vendorId}`, 'PUT', fields);
 }
 
 // ============ ORDERS ============
@@ -482,7 +482,7 @@ export async function getOrdersByUser(userId: string) {
     return query.find();
   }
   const where = { userId };
-  return parseRequest(`/ classes / Order ? where = ${encodeURIComponent(JSON.stringify(where))} `);
+  return parseRequest(`/classes/Order?where=${encodeURIComponent(JSON.stringify(where))}`);
 }
 
 export async function getOrderById(orderId: string) {
@@ -490,7 +490,7 @@ export async function getOrderById(orderId: string) {
     const Order = Parse.Object.extend('Order');
     return new Parse.Query(Order).get(orderId);
   }
-  return parseRequest(`/ classes / Order / ${orderId} `);
+  return parseRequest(`/classes/Order/${orderId}`);
 }
 
 export async function updateOrder(orderId: string, fields: Record<string, any>) {
@@ -501,7 +501,7 @@ export async function updateOrder(orderId: string, fields: Record<string, any>) 
     await order.save();
     return order;
   }
-  return parseRequest(`/ classes / Order / ${orderId} `, 'PUT', fields);
+  return parseRequest(`/classes/Order/${orderId}`, 'PUT', fields);
 }
 
 export async function deleteOrder(orderId: string) {
@@ -511,7 +511,7 @@ export async function deleteOrder(orderId: string) {
     await order.destroy();
     return;
   }
-  return parseRequest(`/ classes / Order / ${orderId} `, 'DELETE');
+  return parseRequest(`/classes/Order/${orderId}`, 'DELETE');
 }
 
 // ============ FAVORITES (User Wishlist) ============
@@ -537,7 +537,7 @@ export async function getFavoritesByUser(userId: string) {
     return query.find();
   }
   const where = { userId };
-  return parseRequest(`/ classes / Favorite ? where = ${encodeURIComponent(JSON.stringify(where))} `);
+  return parseRequest(`/classes/Favorite?where=${encodeURIComponent(JSON.stringify(where))}`);
 }
 
 export async function removeFavorite(favoriteId: string) {
@@ -547,7 +547,7 @@ export async function removeFavorite(favoriteId: string) {
     await fav.destroy();
     return;
   }
-  return parseRequest(`/ classes / Favorite / ${favoriteId} `, 'DELETE');
+  return parseRequest(`/classes/Favorite/${favoriteId}`, 'DELETE');
 }
 
 // ============ REVIEWS ============
@@ -591,7 +591,7 @@ export async function getReviews(where: Record<string, any> | null = null) {
     qobj.descending('createdAt');
     return qobj.find();
   }
-  return parseRequest(`/ classes / Review${q} `);
+  return parseRequest(`/classes/Review${q}`);
 }
 
 export async function updateReview(reviewId: string, fields: Record<string, any>) {
@@ -610,7 +610,7 @@ export async function updateReview(reviewId: string, fields: Record<string, any>
     await obj.save();
     return obj;
   }
-  return parseRequest(`/ classes / Review / ${reviewId} `, 'PUT', fields);
+  return parseRequest(`/classes/Review/${reviewId}`, 'PUT', fields);
 }
 
 export async function deleteReview(reviewId: string) {
@@ -628,7 +628,7 @@ export async function deleteReview(reviewId: string) {
     await obj.destroy();
     return;
   }
-  return parseRequest(`/ classes / Review / ${reviewId} `, 'DELETE');
+  return parseRequest(`/classes/Review/${reviewId}`, 'DELETE');
 }
 
 // ============ APPEALS (Reports / Moderation) ============
@@ -669,7 +669,7 @@ export async function getAppeals(where: Record<string, any> | null = null) {
     qobj.descending('createdAt');
     return qobj.find();
   }
-  return parseRequest(`/ classes / Appeal${q} `);
+  return parseRequest(`/classes/Appeal${q}`);
 }
 
 export async function updateAppeal(appealId: string, fields: Record<string, any>) {
@@ -688,7 +688,7 @@ export async function updateAppeal(appealId: string, fields: Record<string, any>
     await obj.save();
     return obj;
   }
-  return parseRequest(`/ classes / Appeal / ${appealId} `, 'PUT', fields);
+  return parseRequest(`/classes/Appeal/${appealId}`, 'PUT', fields);
 }
 
 // ============ CHAT (Unified Chat Service) ============

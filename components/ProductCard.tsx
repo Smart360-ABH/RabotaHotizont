@@ -15,7 +15,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
     const [isAdded, setIsAdded] = useState(false);
     const [isFlipped, setIsFlipped] = useState(false);
 
-    const vendorName = product.vendorId ? getVendorById(product.vendorId)?.name : product.author;
+    const vendor = product.vendorId ? getVendorById(product.vendorId) : null;
+    const vendorName = vendor?.name || product.author;
+
+    // Debug logging
+    if (product.vendorId && !vendor) {
+        console.warn(`[ProductCard] Vendor not found for product "${product.title}". VendorId: ${product.vendorId}`);
+    }
 
     // Calculate discount percentage
     const discountPercent = product.oldPrice && product.price < product.oldPrice
