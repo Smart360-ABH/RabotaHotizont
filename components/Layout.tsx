@@ -3,11 +3,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ShoppingCart, Heart, User as UserIcon, Search, Menu, X, Monitor, LogOut, Grid, Home, List } from 'lucide-react';
 import { useMarket } from '../context/MarketContext';
+import { useUser } from '../context/UserContext';
 import { AIAssistant } from './AIAssistant';
 import { Facebook, Twitter, Instagram, Chrome } from 'lucide-react';
+import * as back4app from '../services/back4appRest';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { cart, user, searchQuery, setSearchQuery, logout, isDarkMode, toggleTheme } = useMarket();
+  const { cart, searchQuery, setSearchQuery, isDarkMode, toggleTheme } = useMarket();
+  const { user, logout } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -120,13 +123,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 >
                     <Link to="/profile" className="flex flex-col items-center gap-1 text-white/80 hover:text-white transition">
                         <UserIcon className="w-6 h-6" />
-                        <span className="text-[10px] max-w-[60px] truncate">{user.name}</span>
+                        <span className="text-[10px] max-w-[60px] truncate">{user.name || user.username}</span>
                     </Link>
                     
                     {/* Dropdown */}
                     <div className={`absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl py-2 ${isProfileOpen ? 'block' : 'hidden'} border border-gray-100 dark:border-slate-700 text-gray-800 dark:text-gray-200 z-50 animate-fade-in-up`}>
                         <div className="px-4 py-3 border-b dark:border-slate-700 bg-gray-50 dark:bg-slate-700/50">
-                            <p className="font-bold text-sm truncate">{user.name}</p>
+                            <p className="font-bold text-sm truncate">{user.name || user.username}</p>
                             <p className="text-xs text-gray-500">{user.email}</p>
                         </div>
                         <div className="py-1">
@@ -173,6 +176,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
         </div>
       </header>
+
+      {/* Back4App initialization warning banner */}
+      {!back4app.isInitialized() && (
+        <div className="w-full bg-yellow-50 border-t border-b border-yellow-200 text-yellow-900 py-2 text-center text-sm">
+          Back4App не инициализирован. Часто это означает, что переменные окружения не заданы во время сборки/развертывания.
+          Проверьте VITE_PARSE_APP_ID и VITE_PARSE_REST_KEY на хостинге и перезапустите сервис.
+        </div>
+      )}
 
       {/* --- MAIN CONTENT --- */}
       {/* Added padding-bottom on mobile to prevent content from being hidden behind the bottom nav */}

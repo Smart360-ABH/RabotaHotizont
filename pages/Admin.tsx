@@ -23,15 +23,18 @@ const SALES_DATA = [
 ];
 
 type TabType = 'dashboard' | 'sellers' | 'products' | 'orders' | 'users' | 'reviews' | 'marketing' | 'settings';
+// add 'appeals' tab for moderation queue
+type ExtendedTabType = TabType | 'appeals';
 
 export const Admin: React.FC = () => {
   const { 
       user, products, addProduct, updateProduct, logout,
       orders, vendors, users, reviews,
-      updateOrderStatus, updateVendorStatus, deleteReview, updateUserRole, blockUser
+      updateOrderStatus, updateVendorStatus, deleteReview, updateUserRole, blockUser,
+      appeals, resolveAppeal
   } = useMarket();
 
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+    const [activeTab, setActiveTab] = useState<ExtendedTabType>('dashboard');
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
 
   // New Product State
@@ -114,7 +117,7 @@ export const Admin: React.FC = () => {
       ? vendors.find(s => s.id === selectedVendorId) 
       : null;
 
-  const renderSidebarItem = (id: TabType, label: string, icon: React.ReactNode) => (
+    const renderSidebarItem = (id: ExtendedTabType, label: string, icon: React.ReactNode) => (
     <button 
         onClick={() => { setActiveTab(id); setSelectedVendorId(null); }}
         className={`w-full text-left px-4 py-3 rounded-lg transition flex items-center gap-3 ${activeTab === id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
@@ -140,6 +143,7 @@ export const Admin: React.FC = () => {
             {renderSidebarItem('products', 'Товары', <ShoppingBag size={20}/>)}
             {renderSidebarItem('users', 'Пользователи', <Users size={20}/>)}
             {renderSidebarItem('reviews', 'Отзывы', <Star size={20}/>)}
+            {renderSidebarItem('appeals', 'Обжалования', <AlertCircle size={20}/>) }
             {renderSidebarItem('marketing', 'Маркетинг', <Percent size={20}/>)}
             {renderSidebarItem('settings', 'Настройки', <Settings size={20}/>)}
         </nav>
@@ -452,20 +456,99 @@ export const Admin: React.FC = () => {
             {activeTab === 'reviews' && (
                 <div className="space-y-4">
                     {reviews.length === 0 ? <p className="text-gray-500">Отзывов пока нет.</p> : reviews.map(review => (
-                        <div key={review.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 flex justify-between items-start">
-                             <div>
-                                 <div className="flex items-center gap-2 mb-1">
-                                     <span className="font-bold dark:text-white">{review.userName}</span>
-                                     <span className="text-yellow-400 flex text-sm"><Star size={14} fill="currentColor"/> {review.rating}</span>
+                        <div key={review.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700">
+                             <div className="flex justify-between items-start">
+                                 <div>
+                                     <div className="flex items-center gap-2 mb-1">
+                                         <span className="font-bold dark:text-white">{review.userName}</span>
+                                         <span className="text-yellow-400 flex text-sm"><Star size={14} fill="currentColor"/> {review.rating}</span>
+                                     </div>
+                                     <p className="text-gray-600 dark:text-gray-300">{review.comment}</p>
+                                     <div className="text-xs text-gray-400 mt-2">ID товара: {review.productId}</div>
                                  </div>
-                                 <p className="text-gray-600 dark:text-gray-300">{review.comment}</p>
-                                 <div className="text-xs text-gray-400 mt-2">ID товара: {review.productId}</div>
+                                 <div className="flex flex-col items-end gap-2">
+                                     <button onClick={() => deleteReview(review.id)} className="text-red-400 hover:text-red-600">
+                                         <Trash2 size={18} />
+                                     </button>
+                                 </div>
                              </div>
-                             <button onClick={() => deleteReview(review.id)} className="text-red-400 hover:text-red-600">
-                                 <Trash2 size={18} />
-                             </button>
+
+                             {/* Appeals for this review */}
+                             <div className="mt-3 border-t pt-3">
+                                 <h4 className="text-sm font-medium dark:text-white mb-2">Обжалования</h4>
+                                 {appeals.filter(a => a.reviewId === review.id).length === 0 ? (
+                                     <div className="text-xs text-gray-400">Нет обжалований для этого отзыва.</div>
+                                 ) : (
+                                     <div className="space-y-2">
+                                         {appeals.filter(a => a.reviewId === review.id).map(a => (
+                                             <div key={a.id} className="p-2 bg-slate-50 dark:bg-slate-800 rounded border dark:border-slate-700 flex items-center justify-between">
+                                                 <div className="text-xs">
+                                                     <div className="font-medium">От: {a.reporterId} • {new Date(a.createdAt).toLocaleString()}</div>
+                                                     <div className="text-gray-500">Причина: {a.reason}</div>
+                                                     <div className="text-gray-400">Статус: {a.status}</div>
+                                                 </div>
+                                                 <div className="flex items-center gap-2">
+                                                     {a.status === 'pending' && (
+                                                         <>
+                                                             <button onClick={() => {
+                                                                 const note = window.prompt('Комментарий модератора (опционально)');
+                                                                 const ok = resolveAppeal(a.id, 'accept', note || undefined);
+                                                                 if (ok) alert('Апелляция принята — отзыв удалён.');
+                                                             }} className="px-2 py-1 bg-green-600 text-white rounded text-xs">Принять</button>
+                                                             <button onClick={() => {
+                                                                 const note = window.prompt('Комментарий модератора (опционально)');
+                                                                 const ok = resolveAppeal(a.id, 'reject', note || undefined);
+                                                                 if (ok) alert('Апелляция отклонена.');
+                                                             }} className="px-2 py-1 bg-red-600 text-white rounded text-xs">Отклонить</button>
+                                                         </>
+                                                     )}
+                                                 </div>
+                                             </div>
+                                         ))}
+                                     </div>
+                                 )}
+                             </div>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* APPEALS (Moderation Queue) */}
+            {activeTab === 'appeals' && (
+                <div className="space-y-4">
+                    <h3 className="text-xl font-bold dark:text-white mb-4">Обжалования — очередь модерации ({appeals.length})</h3>
+                    {appeals.length === 0 ? (
+                        <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 text-gray-500">Нет новых обжалований.</div>
+                    ) : (
+                        <div className="space-y-3">
+                            {appeals.map(a => (
+                                <div key={a.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 flex items-center justify-between">
+                                    <div>
+                                        <div className="text-sm font-medium dark:text-white">Апелляция #{a.id} — отзыв {a.reviewId} • товар {a.productId}</div>
+                                        <div className="text-xs text-gray-400">Отправил: {a.reporterId} • {new Date(a.createdAt).toLocaleString()}</div>
+                                        <div className="mt-2 text-gray-600 dark:text-gray-300">Причина: {a.reason}</div>
+                                        <div className="mt-2 text-xs text-gray-400">Статус: {a.status}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {a.status === 'pending' && (
+                                            <>
+                                                <button onClick={() => {
+                                                    const note = window.prompt('Комментарий модератора (опционально)');
+                                                    const ok = resolveAppeal(a.id, 'accept', note || undefined);
+                                                    if (ok) alert('Апелляция принята — отзыв удалён.');
+                                                }} className="px-3 py-1 bg-green-600 text-white rounded">Принять</button>
+                                                <button onClick={() => {
+                                                    const note = window.prompt('Комментарий модератора (опционально)');
+                                                    const ok = resolveAppeal(a.id, 'reject', note || undefined);
+                                                    if (ok) alert('Апелляция отклонена.');
+                                                }} className="px-3 py-1 bg-red-600 text-white rounded">Отклонить</button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 

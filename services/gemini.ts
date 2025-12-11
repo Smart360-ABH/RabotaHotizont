@@ -1,9 +1,27 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Read API key from Vite env (preferred) or older env vars for compatibility
+const API_KEY = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_KEY)
+  || (typeof window !== 'undefined' && (window as any).__VITE_API_KEY__)
+  || '';
+
+let ai: any = null;
+if (!API_KEY) {
+  // Не бросаем ошибку — просто логируем, чтобы приложение не падало в браузере
+  // Библиотека @google/genai требует ключ при инициализации в браузере —
+  // поэтому оставим ai = null и обработаем это в функциях ниже.
+  // eslint-disable-next-line no-console
+  console.warn('Google GenAI API key not set. Set VITE_API_KEY to enable AI features.');
+} else {
+  ai = new GoogleGenAI({ apiKey: API_KEY });
+}
 
 export const generateProductDescription = async (title: string, author: string | undefined, category: string) => {
   try {
+    if (!ai) {
+      // AI не инициализирован — возвращаем понятное сообщение, не бросая ошибку
+      return 'Генерация описания недоступна: не настроен API ключ.';
+    }
     const prompt = `Напиши привлекательное, продающее описание для товара на маркетплейсе.
     Название: ${title}
     ${author ? `Автор: ${author}` : ''}
@@ -25,6 +43,9 @@ export const generateProductDescription = async (title: string, author: string |
 
 export const chatWithAssistant = async (history: {role: 'user' | 'model', text: string}[], message: string) => {
     try {
+        if (!ai) {
+            return 'Чат недоступен: не настроен API ключ.';
+        }
         const chat = ai.chats.create({
             model: 'gemini-2.5-flash',
             history: history.map(h => ({ role: h.role, parts: [{ text: h.text }] })),

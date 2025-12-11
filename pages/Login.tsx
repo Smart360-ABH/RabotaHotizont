@@ -1,280 +1,309 @@
-
 import React, { useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useUser } from '../context/UserContext';
 import { useMarket } from '../context/MarketContext';
-import { Mail, Lock, ArrowRight, AlertCircle, ShieldCheck, User, Store } from 'lucide-react';
+import * as back4app from '../services/back4appRest';
+import { LogIn, AlertCircle, UserPlus } from 'lucide-react';
 
 export const Login: React.FC = () => {
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [registerRole, setRegisterRole] = useState<'buyer' | 'seller'>('buyer');
-  
-  // Login State
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  
-  // Register State (Buyer)
-  const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-  const [regConfirmPassword, setRegConfirmPassword] = useState('');
-
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  
-  const { login, loginWithCredentials } = useMarket();
   const navigate = useNavigate();
+  const { login } = useUser();
+  const market = useMarket();
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  
+  // Login state
+  const [loginData, setLoginData] = useState({ username: '', password: '' });
+  
+  // Register state
+  const [registerData, setRegisterData] = useState({
+    username: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    role: 'customer' as 'customer' | 'vendor'
+  });
+  
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
+
+  const handleLoginChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setLoginData({ ...loginData, [e.target.name]: e.target.value });
+  };
+
+  const handleRegisterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setRegisterData({ ...registerData, [e.target.name]: e.target.value });
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setIsLoading(true);
+    setSuccess('');
+    setLoading(true);
 
     try {
-      // Используем loginWithCredentials из контекста, который поддерживает Back4App
-      const success = await loginWithCredentials(email, password);
-      
-      if (success) {
-        setIsLoading(false);
-        // Определяем роль по email для переадресации (в Back4App это будет в userData)
-        if (email.includes('admin')) {
-          navigate('/admin');
-        } else if (email.includes('vendor')) {
-          navigate('/vendor');
-        } else {
-          navigate('/');
-        }
-      } else {
-        setIsLoading(false);
-        setError('Ошибка входа. Проверьте email и пароль.');
+      if (!back4app.isInitialized()) {
+        throw new Error('Back4App не инициализирован');
       }
+
+      const response = await back4app.loginUser(loginData.username, loginData.password);
+      
+      login({
+        objectId: response.objectId,
+        username: response.username,
+        name: response.name || response.username,
+        email: response.email,
+        role: response.role || 'customer',
+        sessionToken: response.sessionToken
+      });
+
+      // Also set MarketContext user so pages relying on useMarket().user
+      // (e.g. ProductDetails for posting reviews) see the same auth state.
+      try {
+        const role = (response.role as any) || (response.email && response.email.includes('admin') ? 'admin' : 'user');
+        market.login(role === 'admin' ? 'admin' : role === 'vendor' ? 'vendor' : 'user');
+      } catch (e) {
+        // ignore
+      }
+
+      setSuccess('Вход успешен!');
+      setTimeout(() => navigate('/'), 500);
     } catch (err) {
-      setIsLoading(false);
-      console.error('[Login] Error:', err);
-      setError('Ошибка входа. Попробуйте позже.');
+      const errorMsg = err instanceof Error ? err.message : 'Ошибка входа';
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
-      e.preventDefault();
-      setError('');
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
 
-      if (regPassword !== regConfirmPassword) {
-          setError('Пароли не совпадают');
-          return;
+    if (!registerData.username || !registerData.email || !registerData.password) {
+      setError('Заполните все поля');
+      return;
+    }
+
+    if (registerData.password !== registerData.confirmPassword) {
+      setError('Пароли не совпадают');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      if (!back4app.isInitialized()) {
+        throw new Error('Back4App не инициализирован');
       }
-      
-      setIsLoading(true);
-      
-      // Simulate API Registration
-      setTimeout(() => {
-          setIsLoading(false);
-          login('user'); // Auto-login as buyer
-          navigate('/');
-      }, 1000);
+
+      await back4app.registerUser(
+        registerData.username,
+        registerData.email,
+        registerData.password,
+        registerData.role
+      );
+
+      setSuccess('Регистрация успешна! Входите с вашими данными.');
+      setRegisterData({ username: '', email: '', password: '', confirmPassword: '', role: 'customer' });
+      setAuthMode('login');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Ошибка регистрации';
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
   };
 
+
+
   return (
-    <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-900 transition-colors duration-300 relative overflow-hidden py-12 min-h-[calc(100vh-160px)]">
-        {/* Background blobs */}
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[100px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 rounded-full blur-[100px]"></div>
-
-        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100 dark:border-slate-700 relative z-10 mx-4">
-            
-            {/* Header Tabs */}
-            <div className="flex bg-gray-100 dark:bg-slate-700 rounded-lg p-1 mb-8">
-                <button 
-                    onClick={() => { setAuthMode('login'); setError(''); }}
-                    className={`flex-1 py-2 text-sm font-bold rounded-md transition ${authMode === 'login' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
-                >
-                    Вход
-                </button>
-                <button 
-                    onClick={() => { setAuthMode('register'); setError(''); }}
-                    className={`flex-1 py-2 text-sm font-bold rounded-md transition ${authMode === 'register' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
-                >
-                    Регистрация
-                </button>
-            </div>
-
-            <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-                    {authMode === 'login' ? 'С возвращением!' : 'Создание аккаунта'}
-                </h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">
-                    {authMode === 'login' ? 'Введите свои данные для доступа' : 'Выберите тип профиля'}
-                </p>
-            </div>
-
-            {authMode === 'login' ? (
-                // --- LOGIN FORM ---
-                <form onSubmit={handleLogin} className="space-y-5">
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
-                        <div className="relative">
-                            <Mail className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                            <input 
-                                type="email" 
-                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:text-white transition-all outline-none"
-                                placeholder="name@example.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="flex justify-between mb-1">
-                            <label className="block text-xs font-bold text-gray-500 uppercase">Пароль</label>
-                            <a href="#" className="text-xs text-indigo-600 hover:underline">Забыли пароль?</a>
-                        </div>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                            <input 
-                                type="password" 
-                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:text-white transition-all outline-none"
-                                placeholder="••••••••"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    {error && (
-                        <div className="flex items-center gap-2 text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-lg animate-fade-in">
-                            <AlertCircle className="w-4 h-4" />
-                            {error}
-                        </div>
-                    )}
-
-                    <button 
-                        type="submit" 
-                        disabled={isLoading}
-                        className="w-full py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/30 disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                        {isLoading ? (
-                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                            <>Войти <ArrowRight className="w-4 h-4" /></>
-                        )}
-                    </button>
-                    
-                    <div className="text-center pt-4">
-                        <p className="text-xs text-gray-400 mb-2">Демо аккаунты:</p>
-                        <div className="flex justify-center gap-2 text-xs">
-                             <span className="cursor-pointer text-indigo-500 hover:underline" onClick={() => {setEmail('admin@store.com'); setPassword('admin')}}>Admin</span>
-                             <span>•</span>
-                             <span className="cursor-pointer text-indigo-500 hover:underline" onClick={() => {setEmail('vendor@store.com'); setPassword('vendor')}}>Vendor</span>
-                             <span>•</span>
-                             <span className="cursor-pointer text-indigo-500 hover:underline" onClick={() => {setEmail('user@store.com'); setPassword('user')}}>User</span>
-                        </div>
-                    </div>
-                </form>
-            ) : (
-                // --- REGISTER FORM ---
-                <div className="space-y-6">
-                    {/* Role Selection */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div 
-                            onClick={() => setRegisterRole('buyer')}
-                            className={`cursor-pointer border-2 rounded-xl p-4 flex flex-col items-center gap-2 transition ${registerRole === 'buyer' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-slate-600 hover:border-gray-300'}`}
-                        >
-                            <User className={`w-6 h-6 ${registerRole === 'buyer' ? 'text-indigo-600' : 'text-gray-400'}`} />
-                            <span className={`text-sm font-bold ${registerRole === 'buyer' ? 'text-indigo-900 dark:text-white' : 'text-gray-500'}`}>Покупатель</span>
-                        </div>
-                        <div 
-                            onClick={() => setRegisterRole('seller')}
-                            className={`cursor-pointer border-2 rounded-xl p-4 flex flex-col items-center gap-2 transition ${registerRole === 'seller' ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-200 dark:border-slate-600 hover:border-gray-300'}`}
-                        >
-                            <Store className={`w-6 h-6 ${registerRole === 'seller' ? 'text-purple-600' : 'text-gray-400'}`} />
-                            <span className={`text-sm font-bold ${registerRole === 'seller' ? 'text-purple-900 dark:text-white' : 'text-gray-500'}`}>Продавец</span>
-                        </div>
-                    </div>
-
-                    {registerRole === 'seller' ? (
-                        <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/10 rounded-xl border border-purple-100 dark:border-purple-900/30">
-                            <h3 className="font-bold text-purple-900 dark:text-purple-100 mb-2">Станьте партнером Горизонта</h3>
-                            <p className="text-sm text-purple-700 dark:text-purple-300 mb-4">
-                                Для регистрации магазина требуется заполнить анкету предпринимателя и выбрать модель логистики.
-                            </p>
-                            <Link 
-                                to="/become-seller"
-                                className="block w-full py-3 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 transition shadow-lg shadow-purple-500/30"
-                            >
-                                Перейте к регистрации продавца
-                            </Link>
-                        </div>
-                    ) : (
-                        <form onSubmit={handleRegister} className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ваше имя</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:text-white transition-all outline-none"
-                                    placeholder="Иван Иванов"
-                                    value={regName}
-                                    onChange={(e) => setRegName(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
-                                <input 
-                                    type="email" 
-                                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:text-white transition-all outline-none"
-                                    placeholder="name@example.com"
-                                    value={regEmail}
-                                    onChange={(e) => setRegEmail(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Пароль</label>
-                                    <input 
-                                        type="password" 
-                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:text-white transition-all outline-none"
-                                        placeholder="******"
-                                        value={regPassword}
-                                        onChange={(e) => setRegPassword(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Повтор</label>
-                                    <input 
-                                        type="password" 
-                                        className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:text-white transition-all outline-none"
-                                        placeholder="******"
-                                        value={regConfirmPassword}
-                                        onChange={(e) => setRegConfirmPassword(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                            </div>
-                            
-                            {error && (
-                                <div className="text-red-500 text-xs text-center">{error}</div>
-                            )}
-
-                            <button 
-                                type="submit" 
-                                disabled={isLoading}
-                                className="w-full py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition flex items-center justify-center gap-2 shadow-lg"
-                            >
-                                {isLoading ? (
-                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                ) : (
-                                    'Зарегистрироваться'
-                                )}
-                            </button>
-                        </form>
-                    )}
-                </div>
-            )}
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl w-full max-w-md">
+        {/* Tabs */}
+        <div className="flex border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => { setAuthMode('login'); setError(''); setSuccess(''); }}
+            className={`flex-1 py-3 font-semibold transition ${authMode === 'login' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
+          >
+            <LogIn className="inline mr-2" size={18} /> Вход
+          </button>
+          <button
+            onClick={() => { setAuthMode('register'); setError(''); setSuccess(''); }}
+            className={`flex-1 py-3 font-semibold transition ${authMode === 'register' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'}`}
+          >
+            <UserPlus className="inline mr-2" size={18} /> Регистрация
+          </button>
         </div>
+
+        <div className="p-8">
+          {authMode === 'login' ? (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-6">Вход в аккаунт</h2>
+
+              {error && (
+                <div className="p-3 bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-100 rounded flex items-start gap-2">
+                  <AlertCircle size={20} className="flex-shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {success && (
+                <div className="p-3 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 rounded">
+                  ✓ {success}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Имя пользователя
+                </label>
+                <input
+                  type="text"
+                  name="username"
+                  value={loginData.username}
+                  onChange={handleLoginChange}
+                  placeholder="john_doe"
+                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Пароль
+                </label>
+                <input
+                  type="password"
+                  name="password"
+                  value={loginData.password}
+                  onChange={handleLoginChange}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition"
+              >
+                {loading ? 'Загрузка...' : 'Войти'}
+              </button>
+
+              <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-blue-700 dark:text-blue-300">
+                <p className="font-semibold mb-1">Тестовые данные:</p>
+                <p>User: <code className="bg-white dark:bg-slate-800 px-1 rounded">john_doe</code></p>
+                <p>Pass: <code className="bg-white dark:bg-slate-800 px-1 rounded">password123</code></p>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleRegister} className="space-y-4">
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-6">Регистрация</h2>
+
+              {error && (
+                <div className="p-3 bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-100 rounded flex items-start gap-2">
+                  <AlertCircle size={20} className="flex-shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {success && (
+                <div className="p-3 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 rounded">
+                  ✓ {success}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Имя пользователя
+                </label>
+                <input
+                  type="text"
+                  name="username"
+                  value={registerData.username}
+                  onChange={handleRegisterChange}
+                  placeholder="john_doe"
+                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={registerData.email}
+                  onChange={handleRegisterChange}
+                  placeholder="john@example.com"
+                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Пароль
+                </label>
+                <input
+                  type="password"
+                  name="password"
+                  value={registerData.password}
+                  onChange={handleRegisterChange}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Подтвердите пароль
+                </label>
+                <input
+                  type="password"
+                  name="confirmPassword"
+                  value={registerData.confirmPassword}
+                  onChange={handleRegisterChange}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Роль
+                </label>
+                <select
+                  name="role"
+                  value={registerData.role}
+                  onChange={handleRegisterChange}
+                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="customer">Покупатель</option>
+                  <option value="vendor">Продавец</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2 px-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition"
+              >
+                {loading ? 'Регистрация...' : 'Зарегистрироваться'}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
+
+export default Login;

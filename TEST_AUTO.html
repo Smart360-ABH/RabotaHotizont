@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Автотест: Комментарии и Сессия</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            padding: 30px;
+            display: flex;
+            gap: 30px;
+        }
+        
+        .left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .right-panel {
+            flex: 1;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            max-height: 600px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        .step {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        
+        .step.active {
+            background: #e8eaf6;
+            border-left-color: #764ba2;
+            box-shadow: 0 4px 12px rgba(118, 75, 162, 0.15);
+        }
+        
+        .step.completed {
+            background: #e8f5e9;
+            border-left-color: #4caf50;
+        }
+        
+        .step.failed {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        
+        .step h3 {
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 16px;
+        }
+        
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .step.completed .step-number {
+            background: #4caf50;
+        }
+        
+        .step.failed .step-number {
+            background: #f44336;
+        }
+        
+        .step.active .step-number {
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(102, 126, 234, 0); }
+        }
+        
+        .step p {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+        
+        .step-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        
+        button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        .btn-success {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #45a049;
+        }
+        
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #da190b;
+        }
+        
+        .log-item {
+            margin-bottom: 8px;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+            border-left: 3px solid #ddd;
+        }
+        
+        .log-item.success {
+            border-left-color: #4caf50;
+            color: #2e7d32;
+        }
+        
+        .log-item.error {
+            border-left-color: #f44336;
+            color: #c62828;
+        }
+        
+        .log-item.warning {
+            border-left-color: #ff9800;
+            color: #e65100;
+        }
+        
+        .log-item.info {
+            border-left-color: #2196f3;
+            color: #1565c0;
+        }
+        
+        .summary {
+            background: #e8f5e9;
+            border: 2px solid #4caf50;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .summary.show {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .summary h3 {
+            color: #2e7d32;
+            margin-bottom: 12px;
+        }
+        
+        .summary-item {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .summary-item.pass::before {
+            content: "✅";
+        }
+        
+        .summary-item.fail::before {
+            content: "❌";
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #999;
+            margin-left: 8px;
+        }
+        
+        .status-indicator.online {
+            background: #4caf50;
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+        }
+        
+        .status-indicator.offline {
+            background: #f44336;
+        }
+        
+        .iframe-embed {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            margin-top: 12px;
+            display: none;
+        }
+        
+        .iframe-embed.show {
+            display: block;
+        }
+        
+        @media (max-width: 1024px) {
+            .content {
+                flex-direction: column;
+            }
+            
+            .right-panel {
+                max-height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 Автотест: Сессия и Комментарии</h1>
+            <p>Проверка восстановления комментариев после F5 (Refresh)</p>
+        </div>
+        
+        <div class="content">
+            <div class="left-panel">
+                <!-- Шаг 1 -->
+                <div class="step" id="step1">
+                    <h3>
+                        <span class="step-number" id="step1-num">1</span>
+                        <span>Навигация на приложение</span>
+                        <span class="status-indicator" id="step1-status"></span>
+                    </h3>
+                    <p>Откроем приложение в новой вкладке и проверим инициализацию Parse.</p>
+                    <div class="step-actions">
+                        <button class="btn-primary" onclick="goToStep1()">📱 Открыть приложение</button>
+                        <button class="btn-secondary" onclick="checkStep1Status()">✓ Проверить статус</button>
+                    </div>
+                </div>
+                
+                <!-- Шаг 2 -->
+                <div class="step" id="step2">
+                    <h3>
+                        <span class="step-number" id="step2-num">2</span>
+                        <span>Вход в систему</span>
+                        <span class="status-indicator" id="step2-status"></span>
+                    </h3>
+                    <p>
+                        <strong>Логин:</strong> Vladikabh23<br>
+                        <strong>Пароль:</strong> 111111
+                    </p>
+                    <p style="color: #f44336; font-size: 13px;">
+                        ⚠️ Пожалуйста, войдите вручную в открытом приложении (нельзя автоматизировать по соображениям безопасности). После входа нажмите кнопку "Проверить статус".
+                    </p>
+                    <div class="step-actions">
+                        <button class="btn-primary" onclick="checkStep2Status()">✓ Проверить вход</button>
+                        <button class="btn-secondary" onclick="manualLoginCheck()">👤 Я вошёл</button>
+                    </div>
+                </div>
+                
+                <!-- Шаг 3 -->
+                <div class="step" id="step3">
+                    <h3>
+                        <span class="step-number" id="step3-num">3</span>
+                        <span>Добавить комментарий</span>
+                        <span class="status-indicator" id="step3-status"></span>
+                    </h3>
+                    <p>
+                        1. Найдите любой товар<br>
+                        2. Откройте его страницу деталей<br>
+                        3. Добавьте комментарий/отзыв (рейтинг 5 звёзд)<br>
+                        4. Нажмите эту кнопку для проверки
+                    </p>
+                    <div class="step-actions">
+                        <button class="btn-primary" onclick="checkStep3Status()">✓ Проверить комментарий</button>
+                        <button class="btn-secondary" onclick="addTestReviewManually()">📝 Добавить тестовый</button>
+                    </div>
+                </div>
+                
+                <!-- Шаг 4 -->
+                <div class="step" id="step4">
+                    <h3>
+                        <span class="step-number" id="step4-num">4</span>
+                        <span>Перезагрузка (F5)</span>
+                        <span class="status-indicator" id="step4-status"></span>
+                    </h3>
+                    <p>
+                        Нажмите <strong>F5</strong> в приложении для перезагрузки страницы (в этой вкладке приложения, не здесь).
+                    </p>
+                    <div class="step-actions">
+                        <button class="btn-primary" onclick="checkStep4Status()">✓ Проверить после F5</button>
+                    </div>
+                </div>
+                
+                <!-- Шаг 5 -->
+                <div class="step" id="step5">
+                    <h3>
+                        <span class="step-number" id="step5-num">5</span>
+                        <span>Проверка результатов</span>
+                        <span class="status-indicator" id="step5-status"></span>
+                    </h3>
+                    <p>
+                        ✅ <strong>Комментарий остался?</strong><br>
+                        ✅ <strong>Пользователь залогинен?</strong> (или 403 — это ОК)<br>
+                        ✅ <strong>localStorage сохранён?</strong>
+                    </p>
+                    <div class="step-actions">
+                        <button class="btn-primary" onclick="checkStep5Status()">✓ Проверить результаты</button>
+                        <button class="btn-secondary" onclick="showDetailedReport()">📊 Подробный отчёт</button>
+                    </div>
+                </div>
+                
+                <!-- Кнопки управления -->
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="btn-success" onclick="runFullTest()">▶️ Запустить весь тест</button>
+                    <button class="btn-danger" onclick="resetTest()">🔄 Очистить результаты</button>
+                </div>
+            </div>
+            
+            <div class="right-panel">
+                <div style="margin-bottom: 12px; font-weight: bold; color: #333;">
+                    📋 Логи и результаты:
+                </div>
+                <div id="logs"></div>
+            </div>
+        </div>
+        
+        <div class="summary" id="summary">
+            <h3>📊 Результаты теста</h3>
+            <div id="summary-content"></div>
+        </div>
+    </div>
+    
+    <script>
+        // Глобальные переменные
+        let testState = {
+            step1: false,
+            step2: false,
+            step3: false,
+            step4: false,
+            step5: false,
+            appWindow: null,
+            checkpoints: {}
+        };
+        
+        const credentials = {
+            username: 'Vladikabh23',
+            password: '111111'
+        };
+        
+        // Логирование
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const timestamp = new Date().toLocaleTimeString('ru-RU');
+            const logItem = document.createElement('div');
+            logItem.className = `log-item ${type}`;
+            
+            const icon = {
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️',
+                'info': 'ℹ️'
+            }[type] || 'ℹ️';
+            
+            logItem.textContent = `[${timestamp}] ${icon} ${message}`;
+            logs.appendChild(logItem);
+            logs.scrollTop = logs.scrollHeight;
+        }
+        
+        // Обновление статуса шага
+        function updateStepStatus(stepNum, status) {
+            const element = document.getElementById(`step${stepNum}`);
+            const statusIndicator = document.getElementById(`step${stepNum}-status`);
+            
+            element.classList.remove('active', 'completed', 'failed');
+            statusIndicator.classList.remove('online', 'offline');
+            
+            if (status === 'active') {
+                element.classList.add('active');
+            } else if (status === 'completed') {
+                element.classList.add('completed');
+                statusIndicator.classList.add('online');
+                testState[`step${stepNum}`] = true;
+            } else if (status === 'failed') {
+                element.classList.add('failed');
+                statusIndicator.classList.add('offline');
+            }
+        }
+        
+        // Шаг 1: Открыть приложение
+        function goToStep1() {
+            log('Открываю приложение в новой вкладке...', 'info');
+            testState.appWindow = window.open('http://localhost:3000', 'app_window', 'width=1200,height=800');
+            
+            if (testState.appWindow) {
+                log('✅ Вкладка приложения открыта', 'success');
+                setTimeout(() => checkStep1Status(), 2000);
+            } else {
+                log('❌ Не удалось открыть вкладку (возможно блокировка popup)', 'error');
+            }
+        }
+        
+        function checkStep1Status() {
+            if (!testState.appWindow || testState.appWindow.closed) {
+                log('⚠️ Вкладка приложения закрыта или не открыта', 'warning');
+                testState.appWindow = window.open('http://localhost:3000', 'app_window', 'width=1200,height=800');
+            } else {
+                log('✅ Приложение доступно', 'success');
+                updateStepStatus(1, 'completed');
+                log('Переходим к Шагу 2: Вход в систему', 'info');
+            }
+        }
+        
+        // Шаг 2: Вход в систему
+        function checkStep2Status() {
+            if (!testState.appWindow || testState.appWindow.closed) {
+                log('❌ Вкладка приложения закрыта', 'error');
+                return;
+            }
+            
+            try {
+                const localStorage = testState.appWindow.localStorage;
+                const market_user = localStorage.getItem('market_user');
+                
+                if (market_user) {
+                    const user = JSON.parse(market_user);
+                    if (user.sessionToken) {
+                        log(`✅ Пользователь залогинен: ${user.username}`, 'success');
+                        log(`   objectId: ${user.objectId}`, 'info');
+                        log(`   sessionToken: ${user.sessionToken.substring(0, 20)}...`, 'info');
+                        updateStepStatus(2, 'completed');
+                        testState.checkpoints.login = { user, timestamp: new Date().toISOString() };
+                        return;
+                    }
+                }
+                
+                log('⚠️ Пользователь не залогинен. Пожалуйста, войдите вручную в приложении.', 'warning');
+            } catch (e) {
+                log(`⚠️ Ошибка проверки: ${e.message}`, 'warning');
+            }
+        }
+        
+        function manualLoginCheck() {
+            log('👤 Вы подтвердили вход. Проверяю...', 'info');
+            setTimeout(() => {
+                checkStep2Status();
+            }, 1000);
+        }
+        
+        // Шаг 3: Добавить комментарий
+        function checkStep3Status() {
+            if (!testState.appWindow || testState.appWindow.closed) {
+                log('❌ Вкладка приложения закрыта', 'error');
+                return;
+            }
+            
+            try {
+                const localStorage = testState.appWindow.localStorage;
+                const market_reviews = localStorage.getItem('market_reviews');
+                
+                if (market_reviews) {
+                    const reviews = JSON.parse(market_reviews);
+                    log(`✅ Найдено ${reviews.length} комментариев`, 'success');
+                    reviews.forEach((r, i) => {
+                        log(`   [${i+1}] "${r.comment.substring(0, 40)}..." (rating: ${r.rating})`, 'info');
+                    });
+                    updateStepStatus(3, 'completed');
+                    testState.checkpoints.beforeRefresh = { reviews, timestamp: new Date().toISOString() };
+                    return;
+                }
+                
+                log('⚠️ Комментариев не найдено. Пожалуйста, добавьте комментарий к товару.', 'warning');
+            } catch (e) {
+                log(`⚠️ Ошибка проверки: ${e.message}`, 'warning');
+            }
+        }
+        
+        function addTestReviewManually() {
+            if (!testState.appWindow || testState.appWindow.closed) {
+                log('❌ Вкладка приложения закрыта', 'error');
+                return;
+            }
+            
+            try {
+                const localStorage = testState.appWindow.localStorage;
+                let reviews = [];
+                
+                try {
+                    const existing = localStorage.getItem('market_reviews');
+                    if (existing) reviews = JSON.parse(existing);
+                } catch {}
+                
+                const testReview = {
+                    id: Date.now().toString(),
+                    productId: 'test-' + Date.now(),
+                    userId: 'test-user',
+                    userName: 'Тестовый пользователь',
+                    rating: 5,
+                    comment: `ТЕСТ АВТОМАТА: ${new Date().toLocaleString('ru-RU')}`,
+                    date: new Date().toLocaleDateString('ru-RU')
+                };
+                
+                reviews.push(testReview);
+                localStorage.setItem('market_reviews', JSON.stringify(reviews));
+                
+                log('✅ Тестовый комментарий добавлен в localStorage', 'success');
+                log(`   Всего комментариев: ${reviews.length}`, 'info');
+                updateStepStatus(3, 'completed');
+                testState.checkpoints.beforeRefresh = { reviews, timestamp: new Date().toISOString() };
+            } catch (e) {
+                log(`❌ Ошибка добавления: ${e.message}`, 'error');
+            }
+        }
+        
+        // Шаг 4: Перезагрузка
+        function checkStep4Status() {
+            log('📍 Нажмите F5 в приложении (в другой вкладке) и затем нажмите эту кнопку снова', 'warning');
+            setTimeout(() => {
+                checkAfterRefresh();
+            }, 500);
+        }
+        
+        function checkAfterRefresh() {
+            if (!testState.appWindow || testState.appWindow.closed) {
+                log('❌ Вкладка приложения закрыта', 'error');
+                return;
+            }
+            
+            try {
+                const localStorage = testState.appWindow.localStorage;
+                const market_reviews = localStorage.getItem('market_reviews');
+                const market_user = localStorage.getItem('market_user');
+                
+                log('✅ Проверка после F5:', 'success');
+                
+                // Проверка комментариев
+                if (market_reviews) {
+                    const reviews = JSON.parse(market_reviews);
+                    const beforeCount = testState.checkpoints.beforeRefresh?.reviews?.length || 0;
+                    const afterCount = reviews.length;
+                    
+                    if (afterCount >= beforeCount) {
+                        log(`   ✅ Комментарии сохранены: ${afterCount} (было ${beforeCount})`, 'success');
+                        testState.checkpoints.afterRefresh = { reviews, timestamp: new Date().toISOString() };
+                    } else {
+                        log(`   ❌ Комментарии потеряны: ${afterCount} (было ${beforeCount})`, 'error');
+                    }
+                } else {
+                    log('   ❌ localStorage market_reviews пуст!', 'error');
+                }
+                
+                // Проверка сессии
+                if (market_user) {
+                    const user = JSON.parse(market_user);
+                    if (user.sessionToken) {
+                        log(`   ✅ Сессия восстановлена (sessionToken есть)`, 'success');
+                    } else {
+                        log(`   ⚠️ Сессия не восстановлена (sessionToken удалён, возможно 403 на сервере)`, 'warning');
+                    }
+                } else {
+                    log('   ⚠️ market_user удалён из localStorage (ожидаемо при 403)', 'warning');
+                }
+                
+                updateStepStatus(4, 'completed');
+                updateStepStatus(5, 'completed');
+                showDetailedReport();
+            } catch (e) {
+                log(`❌ Ошибка проверки: ${e.message}`, 'error');
+            }
+        }
+        
+        // Шаг 5: Результаты
+        function checkStep5Status() {
+            checkAfterRefresh();
+        }
+        
+        function showDetailedReport() {
+            const summary = document.getElementById('summary');
+            const summaryContent = document.getElementById('summary-content');
+            
+            const before = testState.checkpoints.beforeRefresh?.reviews || [];
+            const after = testState.checkpoints.afterRefresh?.reviews || [];
+            
+            const testsResults = {
+                'Приложение открыто': testState.step1,
+                'Пользователь залогинен': testState.step2,
+                'Комментарии добавлены': before.length > 0,
+                'Комментарии сохранены после F5': after.length >= before.length,
+                'localStorage.market_reviews не потерян': after.length > 0
+            };
+            
+            let html = '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">';
+            for (const [test, result] of Object.entries(testsResults)) {
+                html += `
+                    <div class="summary-item ${result ? 'pass' : 'fail'}">
+                        <span>${test}</span>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            
+            // Статистика
+            html += `<div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #ccc;">
+                <p><strong>Статистика:</strong></p>
+                <p>• До F5: ${before.length} комментариев</p>
+                <p>• После F5: ${after.length} комментариев</p>
+                <p>• Потеряно: ${Math.max(0, before.length - after.length)}</p>
+            </div>`;
+            
+            summaryContent.innerHTML = html;
+            summary.classList.add('show');
+            
+            log('📊 Подробный отчёт готов', 'info');
+        }
+        
+        // Запуск полного теста
+        function runFullTest() {
+            log('🚀 Запуск полного автотеста...', 'info');
+            goToStep1();
+        }
+        
+        // Сброс теста
+        function resetTest() {
+            testState = {
+                step1: false,
+                step2: false,
+                step3: false,
+                step4: false,
+                step5: false,
+                appWindow: null,
+                checkpoints: {}
+            };
+            
+            document.querySelectorAll('.step').forEach(step => {
+                step.classList.remove('active', 'completed', 'failed');
+                step.querySelector('.status-indicator').classList.remove('online', 'offline');
+            });
+            
+            document.getElementById('logs').innerHTML = '';
+            document.getElementById('summary').classList.remove('show');
+            
+            log('🔄 Тест сброшен', 'info');
+        }
+        
+        // Инициализация
+        window.addEventListener('load', () => {
+            log('🎉 Тестовый интерфейс готов', 'success');
+            log('💡 Нажмите "Открыть приложение" для начала', 'info');
+            log(`📝 Учётные данные: ${credentials.username} / ${credentials.password}`, 'info');
+        });
+    </script>
+</body>
+</html>

@@ -1,9 +1,9 @@
 
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Product, CartItem, User, VendorPublicProfile, Review, OrderDetails, OrderStatus, VendorProfile } from '../types';
+import { Product, CartItem, User, VendorPublicProfile, Review, OrderDetails, OrderStatus, VendorProfile, Appeal } from '../types';
 import { api } from '../services/api';
-import { Back4App, isBack4AppConfigured } from '../services/back4app';
+import * as back4app from '../services/back4appRest';
 import { MOCK_VENDORS, MOCK_REVIEWS } from '../constants';
 
 interface MarketContextType {
@@ -12,36 +12,43 @@ interface MarketContextType {
   cart: CartItem[];
   user: User | null;
   favorites: string[];
+  followedVendors: string[];
   reviews: Review[];
   orders: OrderDetails[];
   vendors: VendorPublicProfile[];
   users: User[];
-  
+
   addToCart: (product: Product) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
   toggleFavorite: (productId: string) => void;
-  
+  toggleFollowVendor: (vendorId: string) => void;
+
   addProduct: (product: Product) => void;
   updateProduct: (product: Product) => void;
-  
+
   addReview: (review: Omit<Review, 'id' | 'date'>) => void;
   deleteReview: (reviewId: string) => void;
-  
+  appeals: Appeal[];
+  appealReview: (reviewId: string, reason: string) => boolean;
+  getAppealsForProduct: (productId: string) => Appeal[];
+  resolveAppeal: (appealId: string, action: 'accept' | 'reject', decision?: string) => boolean;
+  auditLogs: Array<{ id: string; action: string; by?: string; at: string; meta?: any }>;
+  logAudit: (action: string, meta?: any) => void;
+
   getVendorById: (id: string) => VendorPublicProfile | undefined;
   registerVendor: (data: VendorProfile & { name: string }) => void;
   updateVendorStatus: (vendorId: string, status: 'active' | 'blocked') => void;
 
   addOrder: (order: OrderDetails) => void;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
-  
+
   login: (role: 'user' | 'admin' | 'vendor') => void;
-  loginWithCredentials: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   updateUserRole: (userId: string, role: 'user' | 'admin' | 'vendor') => void;
   blockUser: (userId: string, isBlocked: boolean) => void;
-  
+
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   isDarkMode: boolean;
@@ -54,19 +61,21 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // Data State
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [appeals, setAppeals] = useState<Appeal[]>([]);
+  const [auditLogs, setAuditLogs] = useState<Array<{ id: string; action: string; by?: string; at: string; meta?: any }>>([]);
   const [vendors, setVendors] = useState<VendorPublicProfile[]>([]);
   const [orders, setOrders] = useState<OrderDetails[]>([]);
   const [users, setUsers] = useState<User[]>([
-      { id: 'u1', name: 'Иван Иванов', email: 'user@store.com', role: 'user' },
-      { id: 'v1', name: 'Vendor Tech', email: 'vendor@store.com', role: 'vendor', vendorId: 'v_tech' },
-      { id: 'a1', name: 'Admin', email: 'admin@store.com', role: 'admin' }
+    { id: 'u1', name: 'Иван Иванов', email: 'user@store.com', role: 'user' },
+    { id: 'v1', name: 'Vendor Tech', email: 'vendor@store.com', role: 'vendor', vendorId: 'v_tech' },
+    { id: 'a1', name: 'Admin', email: 'admin@store.com', role: 'admin' }
   ]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
-  
+
   // UI State
   const [searchQuery, setSearchQuery] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -76,12 +85,129 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const data = await api.getProducts();
-        setProducts(data);
-        setReviews(MOCK_REVIEWS);
-        setVendors(MOCK_VENDORS);
+        // Load from Back4App REST API
+        const data = await back4app.getProducts(1000);
+        // back4app.getProducts may return either an array or a Parse-style { results: [...] }
+        let results: any[] = [];
+        if (Array.isArray(data)) results = data;
+        else if (data && Array.isArray((data as any).results)) results = (data as any).results;
+
+        if (results.length > 0) {
+          const mappedProducts = results.map((p: any) => ({
+            id: p.objectId,
+            title: p.title,
+            author: p.vendorName || p.author,
+            category: p.category || 'Electronics',
+            price: p.price || 0,
+            image: p.image && (typeof p.image === 'string' ? p.image : p.image.url || p.image.__type === 'File' && p.image.name ? p.image.url : p.image),
+            description: p.description,
+            vendorId: p.vendorId, // Explicitly map vendorId
+            tags: p.tags || [],
+            reviewsCount: 0,
+            rating: 4.5,
+            isNew: false,
+            isFavorite: false,
+            status: p.status || 'active'
+          }));
+          setProducts(mappedProducts);
+        } else {
+          setProducts([]);
+        }
+
+        // Load reviews: first try server, then localStorage, then MOCK
+        try {
+          const serverReviews = await back4app.getReviews();
+          let reviewResults: any[] = [];
+          if (Array.isArray(serverReviews)) reviewResults = serverReviews;
+          else if (serverReviews && Array.isArray((serverReviews as any).results)) reviewResults = (serverReviews as any).results;
+
+          if (reviewResults.length > 0) {
+            const mapped = reviewResults.map((r: any) => ({
+              id: r.objectId || r.id || Date.now().toString(),
+              productId: r.productId,
+              userId: r.userId,
+              userName: r.userName,
+              rating: r.rating,
+              comment: r.comment,
+              date: r.date || new Date().toLocaleDateString('ru-RU')
+            }));
+            setReviews(mapped);
+            // Cache to localStorage
+            localStorage.setItem('market_reviews', JSON.stringify(mapped));
+          } else {
+            // No reviews on server, try localStorage
+            const saved = localStorage.getItem('market_reviews');
+            if (saved) {
+              setReviews(JSON.parse(saved));
+            } else {
+              setReviews(MOCK_REVIEWS);
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to load reviews from server, trying localStorage:', err);
+          // Fallback to localStorage
+          const saved = localStorage.getItem('market_reviews');
+          if (saved) {
+            try {
+              setReviews(JSON.parse(saved));
+            } catch (e) {
+              console.warn('Failed to load saved reviews, using mock:', e);
+              setReviews(MOCK_REVIEWS);
+            }
+          } else {
+            setReviews(MOCK_REVIEWS);
+          }
+        }
+
+        // Load appeals from localStorage
+        const savedAppeals = localStorage.getItem('market_appeals');
+        if (savedAppeals) {
+          try {
+            setAppeals(JSON.parse(savedAppeals));
+          } catch (e) {
+            console.warn('Failed to load saved appeals:', e);
+            setAppeals([]);
+          }
+        }
+        // Load audit logs
+        const savedAudit = localStorage.getItem('market_audit_logs');
+        if (savedAudit) {
+          try {
+            setAuditLogs(JSON.parse(savedAudit));
+          } catch (e) {
+            console.warn('Failed to load saved audit logs:', e);
+            setAuditLogs([]);
+          }
+        }
+
+        // Load vendors (users with role='vendor')
+        try {
+          const vendorUsers = await back4app.getUsersByRole('vendor');
+          let vResults: any[] = [];
+          if (Array.isArray(vendorUsers)) vResults = vendorUsers;
+          else if (vendorUsers && Array.isArray((vendorUsers as any).results)) vResults = (vendorUsers as any).results;
+
+          const realVendors = vResults.map((u: any) => ({
+            id: u.objectId,
+            name: u.companyName || u.username || 'Unknown Vendor',
+            description: u.description || `Магазин ${u.username}`,
+            image: u.avatar?.url || 'https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?auto=format&fit=crop&w=200&q=80',
+            rating: 5.0, // Default for new vendors
+            joinedDate: u.createdAt,
+            status: 'active',
+            vendorId: u.objectId,
+            revenue: 0,
+            coverImage: u.coverImage?.url
+          }));
+
+          setVendors([...MOCK_VENDORS, ...realVendors]);
+        } catch (err) {
+          console.warn('Failed to load vendors', err);
+          setVendors(MOCK_VENDORS);
+        }
       } catch (e) {
         console.error("Failed to load products", e);
+        setProducts([]);
       } finally {
         setIsLoading(false);
       }
@@ -93,34 +219,10 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme) {
-        setIsDarkMode(savedTheme === 'dark');
+      setIsDarkMode(savedTheme === 'dark');
     } else {
-        const hour = new Date().getHours();
-        if (hour >= 21 || hour < 6) setIsDarkMode(true);
-    }
-
-    // Restore Parse session if Back4App is configured
-    if (isBack4AppConfigured) {
-      const currentUser = Back4App.getCurrentUserJson();
-      if (currentUser) {
-        const appUser: User = {
-          id: currentUser.objectId,
-          name: currentUser.name,
-          email: currentUser.email,
-          role: (currentUser.role || 'user') as 'user' | 'admin' | 'vendor',
-          vendorId: currentUser.vendorId,
-        };
-        setUser(appUser);
-        localStorage.setItem('user', JSON.stringify(appUser));
-      } else {
-        // Try to restore from localStorage as fallback
-        const savedUser = localStorage.getItem('user');
-        if (savedUser) setUser(JSON.parse(savedUser));
-      }
-    } else {
-      // Fallback to localStorage in non-Back4App mode
-      const savedUser = localStorage.getItem('user');
-      if (savedUser) setUser(JSON.parse(savedUser));
+      const hour = new Date().getHours();
+      if (hour >= 21 || hour < 6) setIsDarkMode(true);
     }
   }, []);
 
@@ -128,14 +230,29 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     localStorage.setItem('cart', JSON.stringify(cart));
   }, [cart]);
 
+  // Persist reviews to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('market_reviews', JSON.stringify(reviews));
+  }, [reviews]);
+
+  // Persist appeals to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('market_appeals', JSON.stringify(appeals));
+  }, [appeals]);
+
+  // Persist audit logs
+  useEffect(() => {
+    localStorage.setItem('market_audit_logs', JSON.stringify(auditLogs));
+  }, [auditLogs]);
+
   useEffect(() => {
     const root = window.document.documentElement;
     if (isDarkMode) {
-        root.classList.add('dark');
-        localStorage.setItem('theme', 'dark');
+      root.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
     } else {
-        root.classList.remove('dark');
-        localStorage.setItem('theme', 'light');
+      root.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
     }
   }, [isDarkMode]);
 
@@ -164,7 +281,7 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       prev.map((item) => (item.id === productId ? { ...item, quantity } : item))
     );
   };
-  
+
   const clearCart = () => setCart([]);
 
   const toggleFavorite = (productId: string) => {
@@ -175,162 +292,259 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     );
   };
 
+  // --- VENDOR FOLLOWING ---
+  const [followedVendors, setFollowedVendors] = useState<string[]>([]);
+
+  useEffect(() => {
+    const savedFollows = localStorage.getItem('market_followed_vendors');
+    if (savedFollows) setFollowedVendors(JSON.parse(savedFollows));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('market_followed_vendors', JSON.stringify(followedVendors));
+  }, [followedVendors]);
+
+  const toggleFollowVendor = (vendorId: string) => {
+    setFollowedVendors(prev =>
+      prev.includes(vendorId)
+        ? prev.filter(id => id !== vendorId)
+        : [...prev, vendorId]
+    );
+  };
+
   // --- PRODUCTS ---
   const addProduct = (product: Product) => {
     const productWithVendor = {
-        ...product,
-        vendorId: user?.role === 'vendor' ? user.vendorId : product.vendorId
+      ...product,
+      vendorId: user?.role === 'vendor' ? user.vendorId : product.vendorId
     };
     setProducts((prev) => [productWithVendor, ...prev]);
   };
 
   const updateProduct = (updatedProduct: Product) => {
-    setProducts((prev) => 
+    setProducts((prev) =>
       prev.map((p) => p.id === updatedProduct.id ? updatedProduct : p)
     );
   };
 
   // --- REVIEWS ---
-  const addReview = (reviewData: Omit<Review, 'id' | 'date'>) => {
-      const newReview: Review = {
-          ...reviewData,
-          id: Date.now().toString(),
-          date: new Date().toLocaleDateString('ru-RU')
-      };
-      setReviews(prev => [newReview, ...prev]);
-      
-      // Update product stats
-      setProducts(prev => prev.map(p => {
-          if (p.id === reviewData.productId) {
-              const newCount = p.reviewsCount + 1;
-              const currentTotal = p.rating * p.reviewsCount;
-              const newRating = (currentTotal + reviewData.rating) / newCount;
-              return { ...p, reviewsCount: newCount, rating: Number(newRating.toFixed(1)) };
-          }
-          return p;
-      }));
+  // Add review - ensure only one review per user per product
+  const addReview = (reviewData: Omit<Review, 'id' | 'date'>): boolean => {
+    const exists = reviews.some(r => r.productId === reviewData.productId && r.userId === reviewData.userId);
+    if (exists) {
+      console.warn('[addReview] User already left a review for this product', reviewData.userId, reviewData.productId);
+      return false;
+    }
+
+    const newReview: Review = {
+      ...reviewData,
+      id: Date.now().toString(),
+      date: new Date().toLocaleDateString('ru-RU')
+    };
+    setReviews(prev => [newReview, ...prev]);
+
+    // Update product stats
+    setProducts(prev => prev.map(p => {
+      if (p.id === reviewData.productId) {
+        const newCount = p.reviewsCount + 1;
+        const currentTotal = p.rating * p.reviewsCount;
+        const newRating = (currentTotal + reviewData.rating) / newCount;
+        return { ...p, reviewsCount: newCount, rating: Number(newRating.toFixed(1)) };
+      }
+      return p;
+    }));
+
+    // Try to save to server (best-effort, non-blocking)
+    // Don't send 'id' field to Parse — it will reject it as invalid field name
+    (async () => {
+      try {
+        if (back4app && (back4app as any).createReview) {
+          const serverPayload = {
+            productId: newReview.productId,
+            userId: newReview.userId,
+            userName: newReview.userName,
+            rating: newReview.rating,
+            comment: newReview.comment,
+            date: newReview.date
+          };
+          await (back4app as any).createReview(serverPayload);
+          console.info('[addReview] Review saved to server');
+        }
+      } catch (err) {
+        console.warn('[addReview] Failed to save review to server (continuing with local):', err);
+      }
+    })();
+
+    return true;
   };
-  
+
   const deleteReview = (reviewId: string) => {
-      setReviews(prev => prev.filter(r => r.id !== reviewId));
+    setReviews(prev => prev.filter(r => r.id !== reviewId));
+
+    // Try to delete from server (best-effort)
+    (async () => {
+      try {
+        if (back4app && (back4app as any).deleteReview) {
+          await (back4app as any).deleteReview(reviewId);
+          console.info('[deleteReview] Review deleted from server');
+        }
+      } catch (err) {
+        console.warn('[deleteReview] Failed to delete review from server:', err);
+      }
+    })();
+  };
+
+  // Appeals: users can appeal/report a review for moderation
+  const appealReview = (reviewId: string, reason: string): boolean => {
+    if (!user) {
+      console.warn('[appealReview] No user logged in');
+      return false;
+    }
+    const review = reviews.find(r => r.id === reviewId);
+    if (!review) {
+      console.warn('[appealReview] Review not found', reviewId);
+      return false;
+    }
+    const newAppeal: Appeal = {
+      id: Date.now().toString(),
+      reviewId,
+      productId: review.productId,
+      reporterId: user.id,
+      reason,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    setAppeals(prev => [newAppeal, ...prev]);
+    // Try to persist to server; non-blocking (best-effort)
+    (async () => {
+      try {
+        if (back4app && (back4app as any).createAppeal) {
+          await (back4app as any).createAppeal(newAppeal);
+        }
+      } catch (err) {
+        console.warn('Failed to persist appeal to server (continuing with local only):', err);
+      }
+    })();
+    return true;
+  };
+
+  const getAppealsForProduct = (productId: string) => {
+    return appeals.filter(a => a.productId === productId);
+  };
+
+  // Admin action: resolve appeal. If accepted, we can remove the review.
+  const resolveAppeal = (appealId: string, action: 'accept' | 'reject', decision?: string) => {
+    const appeal = appeals.find(a => a.id === appealId);
+    if (!appeal) return false;
+    const resolvedAt = new Date().toISOString();
+    setAppeals(prev => prev.map(a => a.id === appealId ? { ...a, status: action === 'accept' ? 'accepted' : 'rejected', decision, resolvedAt } : a));
+    if (action === 'accept') {
+      // remove the review that was appealed
+      setReviews(prev => prev.filter(r => r.id !== appeal.reviewId));
+      // update product stats (best-effort)
+      setProducts(prev => prev.map(p => {
+        if (p.id === appeal.productId) {
+          const related = reviews.filter(r => r.productId === p.id && r.id !== appeal.reviewId);
+          const newCount = related.length;
+          const avg = newCount > 0 ? Number((related.reduce((s, rr) => s + rr.rating, 0) / newCount).toFixed(1)) : 0;
+          return { ...p, reviewsCount: newCount, rating: newCount ? avg : p.rating };
+        }
+        return p;
+      }));
+    }
+
+    // Audit log the action
+    try {
+      const actor = user ? user.id : 'anonymous';
+      const entry = { id: Date.now().toString(), action: `appeal_${action}`, by: actor, at: resolvedAt, meta: { appealId, decision } };
+      setAuditLogs(prev => [entry, ...prev]);
+      // Try to persist appeal resolution to server (best-effort)
+      (async () => {
+        try {
+          if (back4app && (back4app as any).updateAppeal) {
+            await (back4app as any).updateAppeal(appealId, { status: action === 'accept' ? 'accepted' : 'rejected', decision, resolvedAt });
+          }
+        } catch (err) {
+          console.warn('Failed to persist appeal resolution to server:', err);
+        }
+      })();
+    } catch (err) {
+      console.warn('Failed to write audit log:', err);
+    }
+    return true;
   };
 
   // --- VENDORS ---
   const getVendorById = (id: string) => {
-      return vendors.find(v => v.id === id);
+    return vendors.find(v => v.id === id);
   };
 
   const registerVendor = (data: VendorProfile & { name: string }) => {
-      const newVendorId = `v_${Date.now()}`;
-      const newVendor: VendorPublicProfile = {
-          id: newVendorId,
-          name: data.companyName,
-          description: `Магазин ${data.companyName}`,
-          image: 'https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?auto=format&fit=crop&w=200&q=80',
-          rating: 0,
-          joinedDate: new Date().toISOString().split('T')[0],
-          status: 'pending',
-          vendorId: newVendorId,
-          revenue: 0
-      };
-      setVendors(prev => [...prev, newVendor]);
-      
-      // Update the user who registered
-      if (user) {
-          const updatedUser = { ...user, role: 'vendor' as const, vendorId: newVendorId };
-          setUser(updatedUser);
-          setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
-      }
+    const newVendorId = `v_${Date.now()}`;
+    const newVendor: VendorPublicProfile = {
+      id: newVendorId,
+      name: data.companyName,
+      description: `Магазин ${data.companyName}`,
+      image: 'https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?auto=format&fit=crop&w=200&q=80',
+      rating: 0,
+      joinedDate: new Date().toISOString().split('T')[0],
+      status: 'pending',
+      vendorId: newVendorId,
+      revenue: 0
+    };
+    setVendors(prev => [...prev, newVendor]);
+
+    // Update the user who registered
+    if (user) {
+      const updatedUser = { ...user, role: 'vendor' as const, vendorId: newVendorId };
+      setUser(updatedUser);
+      setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+    }
   };
 
   const updateVendorStatus = (vendorId: string, status: 'active' | 'blocked') => {
-      setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, status } : v));
+    setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, status } : v));
   };
 
   // --- ORDERS ---
   const addOrder = (order: OrderDetails) => {
-      setOrders(prev => [order, ...prev]);
+    setOrders(prev => [order, ...prev]);
   };
 
   const updateOrderStatus = (orderId: string, status: OrderStatus) => {
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
   };
 
   // --- USERS ---
   const login = async (role: 'user' | 'admin' | 'vendor') => {
     // In a real app, this would fetch from API. Here we just find/create mock
     const mockUser = users.find(u => u.role === role);
-    if (mockUser) {
-      setUser(mockUser);
-      localStorage.setItem('user', JSON.stringify(mockUser));
-    }
+    if (mockUser) setUser(mockUser);
     else {
-        // Fallback for demo if mock user deleted
-        const demoUser: User = { id: 'u_demo', name: 'Demo User', email: 'user@store.com', role };
-        setUser(demoUser);
-        localStorage.setItem('user', JSON.stringify(demoUser));
+      // Fallback for demo if mock user deleted
+      setUser({ id: 'u_demo', name: 'Demo User', email: 'user@store.com', role });
     }
   };
 
-  /**
-   * Вход с email и паролем через Back4App (или fallback в мок-режиме)
-   */
-  const loginWithCredentials = async (email: string, password: string): Promise<boolean> => {
-    try {
-      if (isBack4AppConfigured) {
-        // Используем Back4App для реальной аутентификации
-        const back4appUser = await Back4App.login(email, password);
-        if (back4appUser) {
-          const appUser: User = {
-            id: back4appUser.objectId,
-            name: back4appUser.name,
-            email: back4appUser.email,
-            role: (back4appUser.role || 'user') as 'user' | 'admin' | 'vendor',
-            vendorId: back4appUser.vendorId,
-          };
-          setUser(appUser);
-          localStorage.setItem('user', JSON.stringify(appUser));
-          return true;
-        }
-        return false;
-      } else {
-        // Мок-режим: проверяем email и устанавливаем роль
-        console.log('[Auth] Using mock mode for:', email);
-        let role: 'user' | 'admin' | 'vendor' = 'user';
-        if (email.includes('admin')) role = 'admin';
-        if (email.includes('vendor')) role = 'vendor';
-
-        const mockUser: User = {
-          id: `u_${Date.now()}`,
-          name: email.split('@')[0],
-          email,
-          role,
-        };
-        setUser(mockUser);
-        localStorage.setItem('user', JSON.stringify(mockUser));
-        return true;
-      }
-    } catch (error) {
-      console.error('[Auth] Login error:', error);
-      return false;
-    }
-  };
-
-  const logout = async () => {
-    if (isBack4AppConfigured) {
-      await Back4App.logout();
-    }
-    setUser(null);
-    localStorage.removeItem('user');
-    setCart([]);
-  };
+  const logout = () => setUser(null);
 
   const updateUserRole = (userId: string, role: 'user' | 'admin' | 'vendor') => {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u));
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u));
   };
 
   const blockUser = (userId: string, isBlocked: boolean) => {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, isBlocked } : u));
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, isBlocked } : u));
+  };
+
+  // --- AUDIT helper exposed to UI/components ---
+  const logAudit = (action: string, meta?: any) => {
+    try {
+      const entry = { id: Date.now().toString(), action, by: user ? user.id : 'anonymous', at: new Date().toISOString(), meta };
+      setAuditLogs(prev => [entry, ...prev]);
+      // Best-effort: if server supports audit persistence, call it here (not implemented server-side yet)
+    } catch (err) {
+      console.warn('logAudit failed', err);
+    }
   };
 
   return (
@@ -338,11 +552,14 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       value={{
         products, isLoading, cart, user, favorites, reviews, orders, vendors, users,
         addToCart, removeFromCart, updateQuantity, clearCart, toggleFavorite,
+        followedVendors, toggleFollowVendor,
         addProduct, updateProduct,
         addReview, deleteReview,
+        appeals, appealReview, getAppealsForProduct, resolveAppeal,
         getVendorById, registerVendor, updateVendorStatus,
         addOrder, updateOrderStatus,
-        login, loginWithCredentials, logout, updateUserRole, blockUser,
+        login, logout, updateUserRole, blockUser,
+        auditLogs, logAudit,
         searchQuery, setSearchQuery, isDarkMode, toggleTheme
       }}
     >

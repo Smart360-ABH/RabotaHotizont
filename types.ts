@@ -98,6 +98,18 @@ export interface Review {
     date: string;
 }
 
+export interface Appeal {
+  id: string;
+  reviewId: string;
+  productId: string;
+  reporterId: string; // who reported / appealed
+  reason: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+  resolvedAt?: string;
+  decision?: string;
+}
+
 export interface Shipment {
     id: string;
     date: string;

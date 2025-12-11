@@ -1,706 +1,544 @@
+import React from 'react';
+import { Plus, LayoutDashboard, ShoppingBag, ShoppingCart, Settings, Package, Edit2, Trash2, Loader, Upload, ArrowUpDown, CheckSquare, Square } from 'lucide-react';
+import { useUser } from '../context/UserContext';
+import AddProductForm from '../components/AddProductForm';
+import { CsvUpload } from '../components/CsvUpload';
+import { Navigate } from 'react-router-dom';
+import * as back4app from '../services/back4appRest';
+import { calculateDelivery, formatDeliveryDate } from '../services/logistics';
+import { Truck } from 'lucide-react';
 
-import React, { useState, useRef } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { 
-  Plus, Wand2, Loader2, LogOut, 
-  LayoutDashboard, ShoppingBag, ShoppingCart, 
-  Settings, Search, Truck, BadgeDollarSign, Megaphone,
-  Package, FileText, CheckCircle, AlertTriangle, Printer, Percent, X, Edit, Upload, Image as ImageIcon
-} from 'lucide-react';
-import { useMarket } from '../context/MarketContext';
-import { Product, Category, VendorProductStatus, Shipment, Transaction, LogisticsModel } from '../types';
-import { generateProductDescription } from '../services/gemini';
-import { Link, Navigate } from 'react-router-dom';
+type TabType = 'dashboard' | 'products' | 'orders' | 'settings';
 
-// --- MOCK DATA FOR VENDOR DEMO ---
-const VENDOR_SALES_DATA = [
-  { name: 'Пн', sales: 1200 },
-  { name: 'Вт', sales: 1500 },
-  { name: 'Ср', sales: 800 },
-  { name: 'Чт', sales: 2100 },
-  { name: 'Пт', sales: 900 },
-  { name: 'Сб', sales: 1800 },
-  { name: 'Вс', sales: 2500 },
-];
+interface VendorProduct {
+  objectId: string;
+  title: string;
+  price: number;
+  stock?: number;
+  category?: string;
+  description?: string;
+  vendorId?: string;
 
-const MOCK_SHIPMENTS: Shipment[] = [
-    { id: 'SH-1001', date: '2024-03-20', warehouse: 'Склад Сухум', itemsCount: 150, status: 'processed', skuList: ['1', '2'] },
-    { id: 'SH-1002', date: '2024-03-25', warehouse: 'Склад Гагра', itemsCount: 50, status: 'planned', skuList: ['3'] }
-];
+  image?: string;
+  imageUrl?: string;
+  status?: string;
+}
 
-const MOCK_TRANSACTIONS: Transaction[] = [
-    { id: 'TR-500', date: '2024-03-18', amount: 15000, type: 'payout', description: 'Выплата за период 10.03-17.03', status: 'completed' },
-    { id: 'TR-501', date: '2024-03-19', amount: -500, type: 'logistics', description: 'Хранение FBO', status: 'completed' },
-    { id: 'TR-502', date: '2024-03-20', amount: 4500, type: 'sale', description: 'Продажа #ORD-7782', status: 'completed' }
-];
+interface Order {
+  objectId: string;
+  items: any[];
+  total: number;
+  status: string;
+  createdAt: string;
+  customerName?: string;
+  email?: string;
+  phone?: string;
+}
 
-type TabType = 'dashboard' | 'products' | 'orders' | 'logistics' | 'finance' | 'marketing' | 'profile';
+// PII Masking Utilities
+const maskName = (name: string = 'Unknown') => {
+  return name.charAt(0) + '***';
+};
+
+const maskEmail = (email: string = '') => {
+  if (!email) return '***@***.com';
+  const [user, domain] = email.split('@');
+  return user.charAt(0) + '***@' + domain;
+};
+
+const maskPhone = (phone: string = '') => {
+  if (!phone) return '+7 *** *** ** **';
+  return phone.slice(0, 4) + ' *** *** ' + phone.slice(-2);
+};
+
+const translateStatus = (status: string) => {
+  const map: any = { 'pending': 'Новый', 'processing': 'В обработке', 'shipped': 'Отправлен', 'completed': 'Выполнен', 'cancelled': 'Отменен' };
+  return map[status] || status;
+};
 
 export const VendorDashboard: React.FC = () => {
-  const { user, products, addProduct, updateProduct, logout } = useMarket();
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-  
-  // Filter products by current vendor
-  const vendorProducts = products.filter(p => p.vendorId === user?.vendorId);
+  const { user, logout } = useUser();
+  const [activeTab, setActiveTab] = React.useState<TabType>('dashboard');
+  const [vendorProducts, setVendorProducts] = React.useState<VendorProduct[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [showCsv, setShowCsv] = React.useState(false);
 
-  // --- PRODUCT FORM WIZARD STATE ---
-  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
-  const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  
-  const [newProduct, setNewProduct] = useState<Partial<Product>>({
-    category: 'Books',
-    inStock: true,
-    rating: 0,
-    reviewsCount: 0,
-    image: '',
-    tags: [],
-    title: '',
-    author: '',
-    price: 0,
-    description: '',
-    status: 'draft',
-    specs: {}
-  });
-  const [isGenerating, setIsGenerating] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // New features state
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [sortConfig, setSortConfig] = React.useState({ key: 'title', direction: 'asc' });
 
-  // --- MARKDOWN STATE ---
-  const [markdownProduct, setMarkdownProduct] = useState<Product | null>(null);
-  const [newMarkdownPrice, setNewMarkdownPrice] = useState<number>(0);
+  // Orders State
+  const [vendorOrders, setVendorOrders] = React.useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = React.useState(false);
 
-  // --- LOGISTICS STATE ---
-  const [shipments, setShipments] = useState<Shipment[]>(MOCK_SHIPMENTS);
-  const [logisticsModel, setLogisticsModel] = useState<LogisticsModel>('FBS'); // Default state for demo
+  // Sorting Logic
+  const sortedProducts = React.useMemo(() => {
+    let sortable = [...vendorProducts];
+    if (sortConfig.key) {
+      sortable.sort((a: any, b: any) => {
+        if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sortable;
+  }, [vendorProducts, sortConfig]);
 
-  if (!user || user.role !== 'vendor') {
-     return <Navigate to="/login" replace />;
-  }
-
-  // --- HANDLERS ---
-
-  const handleAIAutoFill = async () => {
-      if (!newProduct.title) return alert("Введите название товара");
-      setIsGenerating(true);
-      const description = await generateProductDescription(
-          newProduct.title, 
-          newProduct.author, 
-          newProduct.category || 'Books'
-      );
-      setNewProduct(prev => ({ ...prev, description }));
-      setIsGenerating(false);
+  const toggleSelection = (id: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedIds(newSet);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setNewProduct(prev => ({ ...prev, image: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
+  const toggleAll = () => {
+    if (selectedIds.size === vendorProducts.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(vendorProducts.map(p => p.objectId)));
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Удалить выбранные товары (${selectedIds.size})?`)) return;
+    setLoading(true);
+    let successCount = 0;
+    let failCount = 0;
+    let lastError = '';
+
+    const ids = Array.from(selectedIds);
+    try {
+      // Process sequentially to avoid rate limiting
+      for (const id of ids) {
+        try {
+          await back4app.deleteProduct(String(id));
+          setVendorProducts(prev => prev.filter(p => p.objectId !== id));
+          // Remove from selection as we go (optional, but good visual feedback if we updated state here)
+          // But we'll verify connection first. Better to update local state optimistically or after loop.
+          successCount++;
+        } catch (e: any) {
+          console.error(`Failed to delete ${id}`, e);
+          failCount++;
+          lastError = e.message || String(e);
+        }
+      }
+
+      // Update selection to remove deleted items
+      const newSet = new Set(selectedIds);
+      // We are simpler: we re-filter vendorProducts based on success
+      // Actually we've been filtering vendorProducts iteratively above? 
+      // No, setVendorProducts above relies on functional update, that works.
+
+      // Re-cleanup selection for deleted items
+      setVendorProducts(current => {
+        const survivors = current.map(p => p.objectId);
+        setSelectedIds(prev => {
+          const next = new Set(prev);
+          ids.forEach(id => { if (!survivors.includes(id)) next.delete(id); });
+          return next;
+        });
+        return current;
+      });
+
+      if (failCount > 0) {
+        alert(`Удалено: ${successCount}. Ошибок: ${failCount}.\nПоследняя ошибка: ${lastError}`);
+      } else {
+        // If all success, clear selection fully
+        setSelectedIds(new Set());
+      }
+
+    } catch (err: any) {
+      alert('Критическая ошибка при удалении: ' + (err.message || err));
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleEditProduct = (product: Product) => {
-      setNewProduct(product);
-      setEditingProductId(product.id);
-      setIsCreatingProduct(true);
-  };
-
-  const handleResetForm = () => {
-      setIsCreatingProduct(false);
-      setEditingProductId(null);
-      setNewProduct({ 
-        category: 'Books', 
-        inStock: true, 
-        image: '', 
-        title: '', 
-        author: '', 
-        price: 0, 
-        description: '', 
-        status: 'draft',
-        rating: 0,
-        reviewsCount: 0,
-        tags: []
-      });
-  };
-
-  const handleSubmitProduct = (e: React.FormEvent) => {
-      e.preventDefault();
-      
-      const imageToUse = newProduct.image || 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&w=600&q=80';
-
-      if (editingProductId) {
-          // UPDATE EXISTING
-          const updatedProduct = {
-              ...newProduct,
-              image: imageToUse,
-              id: editingProductId,
-              // Preserve fields that shouldn't change or are managed elsewhere
-              status: newProduct.status // Allow updating status or keep existing
-          } as Product;
-          
-          updateProduct(updatedProduct);
-          alert("Товар обновлен успешно!");
-      } else {
-          // CREATE NEW
-          const productToAdd = {
-              ...newProduct,
-              id: Date.now().toString(),
-              rating: 0,
-              reviewsCount: 0,
-              vendorId: user.vendorId,
-              status: 'active', // Immediately active
-              image: imageToUse
-          } as Product;
-          
-          addProduct(productToAdd);
-          alert("Товар опубликован и доступен в каталоге!");
+  React.useEffect(() => {
+    const load = async () => {
+      if (!user?.objectId) return;
+      setLoading(true);
+      try {
+        const all = await back4app.getProducts(200);
+        const list = Array.isArray(all) ? all : (all && Array.isArray((all as any).results) ? (all as any).results : []);
+        // Map raw parse objects to VendorProduct
+        const mapped = (list || []).filter((p: any) => p.vendorId === user.objectId).map((p: any) => ({
+          objectId: p.objectId,
+          title: p.title,
+          price: p.price,
+          stock: p.stock,
+          category: p.category,
+          description: p.description,
+          vendorId: p.vendorId,
+          image: p.image ? (p.image.url || p.image) : undefined,
+          imageUrl: p.imageUrl,
+          status: p.status
+        }));
+        setVendorProducts(mapped);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
       }
-      
-      handleResetForm();
-  };
+    };
+    load();
+  }, [user]);
 
-  const handleOpenMarkdown = (product: Product) => {
-      setMarkdownProduct(product);
-      setNewMarkdownPrice(Math.floor(product.price * 0.9)); // Default to 10% off suggestion
-  };
-
-  const handleSaveMarkdown = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!markdownProduct) return;
-      if (newMarkdownPrice >= markdownProduct.price) {
-          alert("Новая цена должна быть ниже текущей для уценки!");
-          return;
-      }
-
-      const updatedProduct = {
-          ...markdownProduct,
-          price: newMarkdownPrice,
-          oldPrice: markdownProduct.price // Store current price as old price
+  // Load Orders
+  React.useEffect(() => {
+    if (activeTab === 'orders' && user?.objectId) {
+      const loadOrders = async () => {
+        setOrdersLoading(true);
+        try {
+          // Mock fetching orders logic since backend might return empty
+          const dummy: Order[] = [
+            { objectId: 'ORD-001', items: [{ title: 'Товар 1', price: 1000, quantity: 1 }], total: 1000, status: 'processing', createdAt: new Date().toISOString(), customerName: 'Ivan Ivanov', email: 'ivanov@example.com', phone: '+79991234567' },
+            { objectId: 'ORD-002', items: [{ title: 'Товар 2', price: 2500, quantity: 2 }], total: 5000, status: 'completed', createdAt: new Date(Date.now() - 86400000).toISOString(), customerName: 'Elena Petrova', email: 'elena.p@mail.ru', phone: '+79031112233' }
+          ];
+          setVendorOrders(dummy);
+        } catch (e) { console.error(e); }
+        finally { setOrdersLoading(false); }
       };
+      loadOrders();
+    }
+  }, [activeTab, user]);
 
-      updateProduct(updatedProduct);
-      setMarkdownProduct(null);
-      alert("Уценка применена успешно!");
+
+
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'vendor') return <Navigate to="/login" replace />;
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Удалить товар?')) return;
+    try {
+      await back4app.deleteProduct(id);
+      setVendorProducts(prev => prev.filter(p => p.objectId !== id));
+    } catch (err) {
+      console.error(err);
+      alert('Ошибка удаления');
+    }
   };
 
-  const handleCreateShipment = () => {
-      const newShipment: Shipment = {
-          id: `SH-${Math.floor(Math.random() * 10000)}`,
-          date: new Date().toISOString().split('T')[0],
-          warehouse: 'Склад Сухум',
-          itemsCount: 0,
-          status: 'planned',
-          skuList: []
-      };
-      setShipments([newShipment, ...shipments]);
-  };
-
-  const renderSidebarItem = (id: TabType, label: string, icon: React.ReactNode) => (
-    <button 
-        onClick={() => { setActiveTab(id); handleResetForm(); }}
-        className={`w-full text-left px-4 py-3 rounded-lg transition flex items-center gap-3 ${activeTab === id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-    >
-        {icon}
-        <span className="font-medium">{label}</span>
-    </button>
-  );
+  // Mobile Menu State
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
   return (
-    <div className="flex min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-300 relative">
-      {/* Markdown Modal */}
-      {markdownProduct && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-              <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border dark:border-slate-700 animate-fade-in-up">
-                  <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-xl font-bold dark:text-white flex items-center gap-2">
-                          <Percent className="w-5 h-5 text-red-500"/> Уценка товара
-                      </h3>
-                      <button onClick={() => setMarkdownProduct(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                          <X className="w-5 h-5"/>
-                      </button>
-                  </div>
-                  
-                  <div className="flex items-center gap-3 mb-4 p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
-                      <img src={markdownProduct.image} className="w-12 h-12 object-cover rounded" alt="" />
-                      <div>
-                          <div className="font-bold text-sm dark:text-white line-clamp-1">{markdownProduct.title}</div>
-                          <div className="text-xs text-gray-500">Текущая цена: {markdownProduct.price} ₽</div>
-                      </div>
-                  </div>
-
-                  <form onSubmit={handleSaveMarkdown}>
-                      <div className="mb-4">
-                          <label className="block text-sm font-medium mb-1 dark:text-gray-300">Новая цена (₽)</label>
-                          <input 
-                              type="number" 
-                              className="w-full p-2 border rounded dark:bg-slate-900 dark:border-slate-600 dark:text-white text-lg font-bold"
-                              value={newMarkdownPrice}
-                              onChange={e => setNewMarkdownPrice(Number(e.target.value))}
-                              min="0"
-                              required
-                          />
-                          {newMarkdownPrice > 0 && newMarkdownPrice < markdownProduct.price && (
-                              <div className="mt-2 text-sm text-green-600 font-medium">
-                                  Скидка: {Math.round(((markdownProduct.price - newMarkdownPrice) / markdownProduct.price) * 100)}%
-                              </div>
-                          )}
-                      </div>
-                      
-                      <button type="submit" className="w-full py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition">
-                          Применить уценку
-                      </button>
-                  </form>
-              </div>
-          </div>
-      )}
-
-      {/* Sidebar */}
-      <div className="w-64 bg-slate-900 text-white p-4 hidden md:flex flex-col border-r border-slate-800">
-        <div className="flex items-center gap-2 mb-8 px-2">
-           <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center font-bold">V</div>
-           <div className="flex flex-col">
-             <span className="text-lg font-bold">Vendor Panel</span>
-             <span className="text-xs text-gray-400 truncate w-32">{user.name}</span>
-           </div>
+    <div className="container mx-auto px-4 py-8">
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* Mobile Header */}
+        <div className="md:hidden flex justify-between items-center mb-4">
+          <div className="font-bold text-lg">Панель продавца</div>
+          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 border rounded">
+            {mobileMenuOpen ? '✕' : '☰'}
+          </button>
         </div>
 
-        <nav className="space-y-1 flex-1 overflow-y-auto">
-            {renderSidebarItem('dashboard', 'Дашборд', <LayoutDashboard size={20}/>)}
-            {renderSidebarItem('products', 'Товары', <ShoppingBag size={20}/>)}
-            {renderSidebarItem('orders', 'Заказы FBS', <ShoppingCart size={20}/>)}
-            {renderSidebarItem('logistics', 'Поставки FBO', <Truck size={20}/>)}
-            {renderSidebarItem('finance', 'Финансы', <BadgeDollarSign size={20}/>)}
-            {renderSidebarItem('marketing', 'Маркетинг', <Megaphone size={20}/>)}
-            {renderSidebarItem('profile', 'Настройки', <Settings size={20}/>)}
-        </nav>
-        
-        <div className="pt-4 border-t border-slate-800 mt-4 space-y-2">
-            <Link to="/" className="block px-4 py-2 text-slate-400 hover:text-white text-sm">← Вернуться в магазин</Link>
-            <button onClick={logout} className="w-full text-left px-4 py-2 text-red-400 hover:text-red-300 flex items-center gap-2 text-sm">
-                <LogOut className="w-4 h-4" /> Выйти
+        {/* Sidebar - Hidden on mobile unless toggled */}
+        <aside className={`w-full md:w-64 ${mobileMenuOpen ? 'block' : 'hidden'} md:block mb-6 md:mb-0`}>
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border dark:border-slate-800 space-y-2">
+            <div className="font-bold text-lg">Панель продавца</div>
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`w-full text-left px-3 py-2 rounded ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-100'}`}
+            >
+              <LayoutDashboard className="inline mr-2" /> Dashboard
             </button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-hidden flex flex-col h-screen">
-        {/* Top Header */}
-        <header className="bg-white dark:bg-slate-800 h-16 border-b dark:border-slate-700 flex items-center justify-between px-8">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white capitalize">
-                {activeTab === 'dashboard' ? 'Обзор бизнеса' : 
-                 activeTab === 'products' ? 'Управление ассортиментом' :
-                 activeTab === 'logistics' ? 'Управление поставками' :
-                 activeTab === 'finance' ? 'Финансовые отчеты' : activeTab}
-            </h2>
-            <div className="flex items-center gap-4">
-                <div className="w-8 h-8 bg-green-100 text-green-600 rounded-full flex items-center justify-center font-bold">
-                    {user.name[0]}
-                </div>
+            <button
+              onClick={() => setActiveTab('products')}
+              className={`w-full text-left px-3 py-2 rounded ${activeTab === 'products' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-100'}`}
+            >
+              <ShoppingBag className="inline mr-2" /> Товары
+            </button>
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`w-full text-left px-3 py-2 rounded ${activeTab === 'orders' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-100'}`}
+            >
+              <ShoppingCart className="inline mr-2" /> Заказы
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`w-full text-left px-3 py-2 rounded ${activeTab === 'settings' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-100'}`}
+            >
+              <Settings className="inline mr-2" /> Настройки
+            </button>
+            <div className="border-t pt-2 mt-2">
+              <button onClick={logout} className="w-full text-left px-3 py-2 rounded text-red-600">Выйти</button>
             </div>
-        </header>
+          </div>
+        </aside>
 
-        <main className="flex-1 overflow-y-auto p-8 bg-slate-50 dark:bg-slate-900">
-            
-            {/* --- DASHBOARD TAB --- */}
-            {activeTab === 'dashboard' && (
-                <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
-                            <h3 className="text-gray-500 dark:text-gray-400 text-sm mb-2">Выручка (неделя)</h3>
-                            <span className="text-2xl font-bold dark:text-white">45,200 ₽</span>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
-                            <h3 className="text-gray-500 dark:text-gray-400 text-sm mb-2">Заказов к отгрузке</h3>
-                            <span className="text-2xl font-bold text-orange-600">3</span>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
-                            <h3 className="text-gray-500 dark:text-gray-400 text-sm mb-2">Активные товары</h3>
-                            <span className="text-2xl font-bold dark:text-white">{vendorProducts.filter(p => p.inStock).length}</span>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
-                            <h3 className="text-gray-500 dark:text-gray-400 text-sm mb-2">Рейтинг продавца</h3>
-                            <span className="text-2xl font-bold text-yellow-500">4.9 ★</span>
-                        </div>
+        <main className="flex-1">
+          {activeTab === 'dashboard' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h1 className="text-2xl font-bold">Dashboard</h1>
+                <div className="text-sm text-gray-500">{vendorProducts.length} товаров</div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white dark:bg-slate-800 p-4 rounded shadow">
+                  <h3 className="font-bold mb-2">Краткая статистика</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="p-3 bg-slate-50 rounded">
+                      Товары
+                      <div className="font-bold mt-1">{vendorProducts.length}</div>
                     </div>
-
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700 h-96">
-                        <h3 className="font-bold mb-4 dark:text-white">Динамика продаж</h3>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={VENDOR_SALES_DATA}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#374151" />
-                                <XAxis dataKey="name" stroke="#9ca3af" />
-                                <YAxis stroke="#9ca3af" />
-                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#fff' }} />
-                                <Bar dataKey="sales" fill="#10b981" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                    <div className="p-3 bg-slate-50 rounded">
+                      Заказы
+                      <div className="font-bold mt-1">—</div>
                     </div>
+                    <div className="p-3 bg-slate-50 rounded">
+                      Доход
+                      <div className="font-bold mt-1">—</div>
+                    </div>
+                  </div>
                 </div>
-            )}
 
-            {/* --- PRODUCTS TAB --- */}
-            {activeTab === 'products' && (
-                <div>
-                    {!isCreatingProduct ? (
-                        <div className="space-y-6">
-                            <div className="flex justify-between items-center">
-                                <div className="flex gap-2">
-                                    <button className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg font-medium hover:bg-indigo-100">Все</button>
-                                    <button className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg">Активные</button>
-                                    <button className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg">Заблокированные</button>
-                                </div>
-                                <button onClick={() => { handleResetForm(); setIsCreatingProduct(true); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg flex items-center gap-2 font-medium hover:bg-indigo-700">
-                                    <Plus className="w-4 h-4"/> Создать карточку
-                                </button>
-                            </div>
-
-                            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden">
-                                <table className="w-full text-left">
-                                    <thead className="bg-gray-50 dark:bg-slate-700/50 text-gray-500 uppercase text-xs">
-                                        <tr>
-                                            <th className="p-4">Фото</th>
-                                            <th className="p-4">Наименование / Артикул</th>
-                                            <th className="p-4">Категория</th>
-                                            <th className="p-4 text-right">Цена</th>
-                                            <th className="p-4 text-center">Статус</th>
-                                            <th className="p-4 text-right">Действия</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-                                        {vendorProducts.map(p => (
-                                            <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/50">
-                                                <td className="p-4"><img src={p.image} className="w-12 h-16 object-cover rounded bg-gray-100" alt="" /></td>
-                                                <td className="p-4">
-                                                    <div className="font-medium dark:text-white">{p.title}</div>
-                                                    <div className="text-xs text-gray-400">{p.id}</div>
-                                                </td>
-                                                <td className="p-4 text-sm dark:text-gray-300">{p.category}</td>
-                                                <td className="p-4 text-right font-medium dark:text-white">
-                                                    {p.price} ₽
-                                                    {p.oldPrice && (
-                                                        <div className="text-xs text-red-500 line-through">{p.oldPrice} ₽</div>
-                                                    )}
-                                                </td>
-                                                <td className="p-4 text-center">
-                                                    {p.status === 'moderation' ? (
-                                                        <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-bold">На проверке</span>
-                                                    ) : p.status === 'blocked' ? (
-                                                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold">Заблокирован</span>
-                                                    ) : p.status === 'draft' ? (
-                                                        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-bold">Черновик</span>
-                                                    ) : (
-                                                        <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-bold">Активен</span>
-                                                    )}
-                                                </td>
-                                                <td className="p-4 text-right">
-                                                    <div className="flex justify-end gap-2">
-                                                        <button 
-                                                            onClick={() => handleEditProduct(p)}
-                                                            className="p-2 text-gray-500 hover:text-indigo-600 transition" 
-                                                            title="Редактировать"
-                                                        >
-                                                            <Edit className="w-5 h-5"/>
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleOpenMarkdown(p)}
-                                                            className="p-2 text-gray-500 hover:text-red-600 transition" 
-                                                            title="Уценка (Markdown)"
-                                                        >
-                                                            <Percent className="w-5 h-5"/>
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                                {vendorProducts.length === 0 && (
-                                    <div className="p-8 text-center text-gray-500">У вас пока нет товаров.</div>
-                                )}
-                            </div>
-                        </div>
-                    ) : (
-                        // CREATE/EDIT PRODUCT WIZARD
-                        <div className="max-w-4xl mx-auto bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-8">
-                            <div className="flex items-center justify-between mb-8">
-                                <h2 className="text-xl font-bold dark:text-white">
-                                    {editingProductId ? 'Редактирование товара' : 'Создание карточки товара'}
-                                </h2>
-                                <button onClick={handleResetForm} className="text-gray-500 hover:text-gray-700">Отмена</button>
-                            </div>
-
-                            <form onSubmit={handleSubmitProduct} className="space-y-6">
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1 dark:text-gray-300">Категория</label>
-                                        <select 
-                                            className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                            value={newProduct.category}
-                                            onChange={e => setNewProduct({...newProduct, category: e.target.value as Category})}
-                                        >
-                                            <option value="Books">Книги</option>
-                                            <option value="Clothes">Одежда</option>
-                                            <option value="Electronics">Электроника</option>
-                                            <option value="Home">Дом</option>
-                                            <option value="Stationery">Канцелярия</option>
-                                            {/* Add others as needed */}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1 dark:text-gray-300">Бренд / Автор</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                            value={newProduct.author}
-                                            onChange={e => setNewProduct({...newProduct, author: e.target.value})}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium mb-1 dark:text-gray-300">Название товара</label>
-                                    <input 
-                                        type="text" 
-                                        className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                        value={newProduct.title}
-                                        onChange={e => setNewProduct({...newProduct, title: e.target.value})}
-                                        placeholder="Например: Смартфон iPhone 15 Pro"
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-6">
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1 dark:text-gray-300">Цена (₽)</label>
-                                        <input 
-                                            type="number" 
-                                            className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                            value={newProduct.price}
-                                            onChange={e => setNewProduct({...newProduct, price: Number(e.target.value)})}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1 dark:text-gray-300">Цена до скидки (₽)</label>
-                                        <input 
-                                            type="number" 
-                                            className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                            value={newProduct.oldPrice || ''}
-                                            onChange={e => setNewProduct({...newProduct, oldPrice: Number(e.target.value)})}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-1 dark:text-gray-300">Артикул продавца</label>
-                                        <input type="text" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="ART-001"/>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <div className="flex justify-between items-center mb-1">
-                                        <label className="block text-sm font-medium dark:text-gray-300">Описание</label>
-                                        <button 
-                                            type="button" 
-                                            onClick={handleAIAutoFill}
-                                            disabled={isGenerating}
-                                            className="text-xs text-indigo-600 flex items-center gap-1 hover:underline"
-                                        >
-                                            {isGenerating ? <Loader2 className="w-3 h-3 animate-spin"/> : <Wand2 className="w-3 h-3"/>}
-                                            Сгенерировать с AI
-                                        </button>
-                                    </div>
-                                    <textarea 
-                                        className="w-full p-2 border rounded h-32 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                        value={newProduct.description}
-                                        onChange={e => setNewProduct({...newProduct, description: e.target.value})}
-                                    />
-                                </div>
-                                
-                                {/* Photo Upload Section */}
-                                <div 
-                                    className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl p-8 text-center bg-gray-50 dark:bg-slate-800/50 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-800 transition relative overflow-hidden"
-                                    onClick={() => fileInputRef.current?.click()}
-                                >
-                                    {newProduct.image ? (
-                                        <div className="flex flex-col items-center">
-                                            <img src={newProduct.image} alt="Preview" className="h-48 object-contain mb-4 rounded-lg shadow-sm"/>
-                                            <p className="text-sm text-green-600 font-medium flex items-center gap-2">
-                                                <CheckCircle className="w-4 h-4"/> Изображение загружено
-                                            </p>
-                                            <p className="text-xs text-gray-500 mt-2">Нажмите, чтобы заменить</p>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col items-center">
-                                            <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-full flex items-center justify-center mb-3">
-                                                <Upload className="w-6 h-6"/>
-                                            </div>
-                                            <div className="text-gray-500 mb-2">Перетащите фото сюда или нажмите для загрузки</div>
-                                            <button type="button" className="px-4 py-2 bg-white border dark:bg-slate-700 dark:border-slate-600 rounded shadow-sm text-sm dark:text-white">
-                                                Выбрать файл
-                                            </button>
-                                        </div>
-                                    )}
-                                    <input 
-                                        type="file" 
-                                        ref={fileInputRef}
-                                        className="hidden" 
-                                        accept="image/*"
-                                        onChange={handleImageUpload}
-                                    />
-                                </div>
-
-                                <div className="flex gap-4 pt-4 border-t dark:border-slate-700">
-                                    <button type="submit" className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">
-                                        {editingProductId ? 'Сохранить изменения' : 'Опубликовать в каталог'}
-                                    </button>
-                                    {!editingProductId && (
-                                        <button type="button" className="px-6 py-3 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200 dark:bg-slate-700 dark:text-white">
-                                            Сохранить черновик
-                                        </button>
-                                    )}
-                                </div>
-                            </form>
-                        </div>
-                    )}
+                <div className="bg-white dark:bg-slate-800 p-4 rounded shadow">
+                  <h3 className="font-bold mb-2">Последние действия</h3>
+                  <div className="text-sm text-gray-500">Здесь будут показаны последние заказы и уведомления.</div>
                 </div>
-            )}
+              </div>
+            </div>
+          )}
 
-            {/* --- LOGISTICS TAB (FBO) --- */}
-            {activeTab === 'logistics' && (
-                <div className="space-y-6">
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-xl font-bold dark:text-white">Поставки FBO</h2>
-                        <button onClick={handleCreateShipment} className="px-4 py-2 bg-indigo-600 text-white rounded-lg flex items-center gap-2 font-medium hover:bg-indigo-700">
-                            <Plus className="w-4 h-4"/> Создать поставку
+          {activeTab === 'products' && (
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">Мои товары</h2>
+                <div className="flex items-center gap-2">
+                  {/* Bulk Actions */}
+                  {selectedIds.size > 0 && (
+                    <button
+                      onClick={handleBulkDelete}
+                      className="px-3 py-2 bg-red-100 text-red-700 rounded flex items-center gap-2 mr-4 animate-in fade-in"
+                    >
+                      <Trash2 size={18} /> Удалить ({selectedIds.size})
+                    </button>
+                  )}
+
+                  {/* Sort Dropdown */}
+                  <div className="flex border rounded overflow-hidden mr-2">
+                    <button
+                      onClick={() => setSortConfig({ key: 'price', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}
+                      className={`px-3 py-2 text-sm flex items-center gap-1 ${sortConfig.key === 'price' ? 'bg-slate-100 font-bold' : ''}`}
+                    >
+                      Цена <ArrowUpDown size={14} />
+                    </button>
+                    <button
+                      onClick={() => setSortConfig({ key: 'title', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}
+                      className={`px-3 py-2 text-sm flex items-center gap-1 border-l ${sortConfig.key === 'title' ? 'bg-slate-100 font-bold' : ''}`}
+                    >
+                      Название <ArrowUpDown size={14} />
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => setShowAdd(true)}
+                    className="px-3 py-2 bg-indigo-600 text-white rounded flex items-center gap-2"
+                  >
+                    <Plus /> Добавить
+                  </button>
+                  <button
+                    onClick={() => setShowCsv(true)}
+                    className="px-3 py-2 bg-green-600 text-white rounded flex items-center gap-2"
+                  >
+                    <Upload size={20} /> Импорт CSV
+                  </button>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="py-20 text-center">
+                  <Loader className="animate-spin mx-auto" />
+                </div>
+              ) : vendorProducts.length === 0 ? (
+                <div className="py-12 text-center bg-white dark:bg-slate-800 rounded p-6">
+                  Товары не найдены
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  <div className="flex items-center gap-2 mb-2 px-2 text-sm text-gray-500">
+                    <button onClick={toggleAll} className="flex items-center gap-2 hover:text-indigo-600">
+                      {selectedIds.size === vendorProducts.length && vendorProducts.length > 0 ? <CheckSquare size={18} /> : <Square size={18} />}
+                      Выбрать все
+                    </button>
+                  </div>
+
+                  {sortedProducts.map(p => (
+                    <div
+                      key={p.objectId}
+                      className={`p-4 rounded shadow flex items-center justify-between transition-colors ${selectedIds.has(p.objectId) ? 'bg-indigo-50 border border-indigo-200' : 'bg-white dark:bg-slate-800'}`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <button onClick={() => toggleSelection(p.objectId)} className="text-gray-400 hover:text-indigo-600">
+                          {selectedIds.has(p.objectId) ? <CheckSquare /> : <Square />}
                         </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4">
-                        {shipments.map(s => (
-                            <div key={s.id} className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700 flex flex-col md:flex-row items-center justify-between">
-                                <div>
-                                    <div className="flex items-center gap-3 mb-1">
-                                        <span className="font-bold text-lg dark:text-white">Поставка {s.id}</span>
-                                        <span className={`px-2 py-0.5 text-xs font-bold rounded-full uppercase ${
-                                            s.status === 'processed' ? 'bg-green-100 text-green-700' : 
-                                            s.status === 'accepted' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'
-                                        }`}>
-                                            {s.status === 'planned' ? 'Планируется' : s.status === 'accepted' ? 'Принята' : 'Обработана'}
-                                        </span>
-                                    </div>
-                                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                                        {s.date} • {s.warehouse} • {s.itemsCount > 0 ? `${s.itemsCount} товаров` : 'Черновик'}
-                                    </div>
-                                </div>
-                                
-                                <div className="flex gap-3">
-                                    <button className="p-2 text-gray-500 hover:text-indigo-600 border rounded hover:bg-gray-50 dark:border-slate-600 dark:text-gray-400" title="Штрихкоды">
-                                        <Printer className="w-5 h-5"/>
-                                    </button>
-                                    <button className="px-4 py-2 bg-gray-100 text-gray-700 font-medium rounded hover:bg-gray-200 dark:bg-slate-700 dark:text-white">
-                                        Редактировать
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* --- FINANCE TAB --- */}
-            {activeTab === 'finance' && (
-                <div className="space-y-6">
-                    <div className="grid grid-cols-3 gap-6">
-                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
-                            <h3 className="text-sm text-gray-500 mb-1">Текущий баланс</h3>
-                            <div className="text-2xl font-bold dark:text-white">12,500 ₽</div>
-                            <div className="text-xs text-green-600 mt-2">Доступно к выводу</div>
-                         </div>
-                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
-                             <h3 className="text-sm text-gray-500 mb-1">К выплате (14 дней)</h3>
-                             <div className="text-2xl font-bold dark:text-white">35,000 ₽</div>
-                         </div>
-                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
-                             <h3 className="text-sm text-gray-500 mb-1">Удержания / Штрафы</h3>
-                             <div className="text-2xl font-bold text-red-500">-500 ₽</div>
-                         </div>
-                    </div>
-
-                    <h3 className="font-bold text-lg dark:text-white mt-8">История операций</h3>
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden">
-                        <table className="w-full text-left">
-                            <thead className="bg-gray-50 dark:bg-slate-700/50 text-gray-500 text-xs uppercase">
-                                <tr>
-                                    <th className="p-4">Дата / ID</th>
-                                    <th className="p-4">Тип</th>
-                                    <th className="p-4">Описание</th>
-                                    <th className="p-4 text-right">Сумма</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-                                {MOCK_TRANSACTIONS.map(tr => (
-                                    <tr key={tr.id}>
-                                        <td className="p-4">
-                                            <div className="font-medium dark:text-white">{tr.date}</div>
-                                            <div className="text-xs text-gray-400">{tr.id}</div>
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                                tr.type === 'payout' ? 'bg-purple-100 text-purple-700' :
-                                                tr.type === 'sale' ? 'bg-green-100 text-green-700' :
-                                                'bg-red-100 text-red-700'
-                                            }`}>
-                                                {tr.type === 'payout' ? 'Выплата' : tr.type === 'sale' ? 'Продажа' : 'Удержание'}
-                                            </span>
-                                        </td>
-                                        <td className="p-4 text-sm dark:text-gray-300">{tr.description}</td>
-                                        <td className={`p-4 text-right font-bold ${tr.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                            {tr.amount > 0 ? '+' : ''}{tr.amount} ₽
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
-            
-            {/* --- ORDERS TAB --- */}
-            {activeTab === 'orders' && (
-                <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700">
-                    <Package className="w-16 h-16 text-gray-300 mx-auto mb-4"/>
-                    <h3 className="text-xl font-bold dark:text-white mb-2">Нет активных заказов FBS</h3>
-                    <p className="text-gray-500">Заказы для самостоятельной сборки появятся здесь.</p>
-                </div>
-            )}
-
-            {/* --- PROFILE TAB --- */}
-            {activeTab === 'profile' && (
-                <div className="space-y-6">
-                    <h2 className="text-xl font-bold dark:text-white">Настройки профиля</h2>
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 space-y-4 max-w-2xl">
+                        <div className="w-16 h-16 bg-gray-100 rounded overflow-hidden flex items-center justify-center">
+                          {p.image || p.imageUrl ? (
+                            <img src={p.image || p.imageUrl} className="w-full h-full object-cover" />
+                          ) : (
+                            <Package />
+                          )}
+                        </div>
                         <div>
-                            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Название магазина</label>
-                            <input type="text" className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" defaultValue="My Best Shop"/>
+                          <div className="font-bold">{p.title}</div>
+                          <div className="text-sm text-gray-500">{p.category} • {p.price} ₽</div>
+                          <div className="mt-1">
+                            {p.status === 'pending' ? (
+                              <span className="px-2 py-0.5 text-xs rounded bg-yellow-100 text-yellow-800">На проверке</span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-xs rounded bg-green-100 text-green-800">Активен</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 mt-2 text-xs text-gray-400">
+                            <Truck size={12} />
+                            <span>Доставка в мск: {calculateDelivery('Saint-Petersburg').daysMin}-{calculateDelivery('Saint-Petersburg').daysMax} дн.</span>
+                          </div>
                         </div>
-                         <div>
-                            <label className="block text-sm font-medium mb-1 dark:text-gray-300">Модель работы</label>
-                            <select 
-                                className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                value={logisticsModel}
-                                onChange={(e) => setLogisticsModel(e.target.value as LogisticsModel)}
-                            >
-                                <option value="FBS">FBS - Доставка от Горизонта</option>
-                                <option value="FBO">FBO - Со склада Горизонта</option>
-                                <option value="CNC">C&C - Самовывоз из магазина</option>
-                                <option value="DBS">DBS - Доставка продавцом</option>
-                            </select>
-                        </div>
-                         <button className="px-6 py-2 bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700">Сохранить</button>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => alert('Редактирование пока не реализовано')}
+                          className="px-2 py-1 rounded border"
+                        >
+                          <Edit2 />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p.objectId)}
+                          className="px-2 py-1 rounded border text-red-600"
+                        >
+                          <Trash2 />
+                        </button>
+                      </div>
                     </div>
+                  ))}
                 </div>
-            )}
+              )}
+
+
+              {showAdd && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white dark:bg-slate-800 rounded-lg w-full max-w-2xl p-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-bold">Добавить товар</h3>
+                      <button onClick={() => setShowAdd(false)} className="text-gray-500">✕</button>
+                    </div>
+                    <AddProductForm vendorId={user.objectId} onSuccess={(created) => {
+                      try {
+                        const p = created && created.objectId ? created : null;
+                        if (p) {
+                          const mapped: VendorProduct = {
+                            objectId: p.objectId,
+                            title: p.title,
+                            price: p.price || 0,
+                            stock: p.stock,
+                            category: p.category,
+                            description: p.description,
+                            vendorId: p.vendorId,
+
+                            image: p.image ? (typeof p.image === 'string' ? p.image : p.image.url || (p.image && p.image.url)) : undefined,
+                            imageUrl: p.imageUrl,
+                            status: p.status || 'pending'
+                          };
+                          setVendorProducts(prev => [mapped, ...prev]);
+                        }
+                      } catch (err) {
+                        console.error('onSuccess mapping failed', err);
+                      }
+                      setShowAdd(false);
+                    }} />
+                    <div className="mt-4 flex justify-end">
+                      <button onClick={() => setShowAdd(false)} className="px-4 py-2 bg-indigo-600 text-white rounded">Готово</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showCsv && (
+                <CsvUpload
+                  vendorId={user.objectId}
+                  onClose={() => setShowCsv(false)}
+                  onSuccess={(count, err) => {
+                    setShowCsv(false);
+                    if (err) {
+                      alert(`Загружено: ${count} товаров. \nОшибки: ${err}`);
+                    } else {
+                      alert(`Успешно загружено товаров: ${count}`);
+                    }
+                    window.location.reload();
+                  }}
+                />
+              )}
+            </div>
+          )}
+
+          {activeTab === 'orders' && (
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold">Заказы</h2>
+              {ordersLoading ? (
+                <div className="py-20 text-center"><Loader className="animate-spin mx-auto" /></div>
+              ) : vendorOrders.length === 0 ? (
+                <div className="bg-white dark:bg-slate-800 p-6 rounded shadow text-center">Нет активных заказов</div>
+              ) : (
+                <div className="space-y-4">
+                  {vendorOrders.map((order) => (
+                    <div key={order.objectId} className="bg-white dark:bg-slate-800 p-4 rounded shadow border border-gray-100 dark:border-gray-700">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="font-bold text-lg">Заказ #{order.objectId.slice(-4)}</span>
+                          <span className={`ml-2 px-2 py-0.5 rounded text-xs ${order.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                            {translateStatus(order.status)}
+                          </span>
+                        </div>
+                        <div className="text-right text-sm text-gray-500">
+                          <div>{new Date(order.createdAt).toLocaleDateString()}</div>
+                          <div className="font-bold text-indigo-600">{order.total} ₽</div>
+                        </div>
+                      </div>
+
+                      {/* PII SECTION: MASKED DATA */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-slate-50 dark:bg-slate-900 p-3 rounded mb-3">
+                        <div>
+                          <div className="text-gray-400 text-xs uppercase mb-1">Покупатель</div>
+                          <div className="font-medium flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-slate-400"></div>
+                            {maskName(order.customerName)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400 text-xs uppercase mb-1">Контакты (Скрыто)</div>
+                          <div className="font-mono text-xs text-gray-600">
+                            {maskEmail(order.email)} <br />
+                            {maskPhone(order.phone)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        {order.items.map((item: any, idx: number) => (
+                          <div key={idx} className="flex justify-between text-sm border-b border-gray-100 last:border-0 py-1">
+                            <span>{item.title} x {item.quantity}</span>
+                            <span>{item.price * item.quantity} ₽</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+
+          {activeTab === 'settings' && (
+            <div className="bg-white dark:bg-slate-800 p-6 rounded shadow">
+              Настройки магазина
+            </div>
+          )}
         </main>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
+
+export default VendorDashboard;
