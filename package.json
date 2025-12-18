@@ -1,0 +1,37 @@
+{
+  "name": "copy-of-copy-of-экосистема-market",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "npx serve -s dist -l 3000",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview",
+    "db:repair": "ts-node scripts/repair_database.ts",
+    "db:setup-reviews": "ts-node scripts/setup_reviews_schema.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "@types/papaparse": "^5.5.1",
+    "axios": "^1.13.2",
+    "events": "^3.3.0",
+    "lucide-react": "^0.555.0",
+    "papaparse": "^5.5.3",
+    "parse": "^7.0.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.6",
+    "recharts": "^3.5.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "dotenv": "^17.2.3",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
