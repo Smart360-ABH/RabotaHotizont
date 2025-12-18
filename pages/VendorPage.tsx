@@ -15,6 +15,8 @@ export const VendorPage: React.FC = () => {
 
     const [localVendor, setLocalVendor] = React.useState<any | undefined>(undefined);
     const [isLoading, setIsLoading] = React.useState(false);
+    const [isMessageModalOpen, setIsMessageModalOpen] = React.useState(false);
+    const [messageText, setMessageText] = React.useState('');
 
     // Fallback: Check if it's a User ID that just has role='vendor' but not fully registered in MOCK data
     // OR fetch from server if not found in context at all
@@ -101,6 +103,65 @@ export const VendorPage: React.FC = () => {
 
     const vendorProducts = products.filter(p => p.vendorId === vendor.id);
 
+    const handleSubscribe = async () => {
+        if (!vendor) return;
+
+        const isCurrentlySubscribed = followedVendors.includes(vendor.id);
+        toggleFollowVendor(vendor.id);
+
+        if (!isCurrentlySubscribed) {
+            // Request notification permission if not already granted
+            if ('Notification' in window) {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    new Notification(`Вы подписались на ${vendor.name}`, {
+                        body: 'Теперь вы будете получать уведомления о новых товарах и скидках этого продавца.',
+                        icon: vendor.image
+                    });
+                }
+            } else {
+                alert(`Вы подписались на ${vendor.name}!`);
+            }
+        }
+    };
+
+    const handleSendMessage = async () => {
+        if (!messageText.trim()) return;
+        console.log('[VendorPage] Attempting to send message...');
+
+        try {
+            if (user && vendor) {
+                const currentUserId = user.id || user.objectId;
+                const targetUserId = vendor.vendorId;
+
+                console.log('[VendorPage] Creating conversation between:', currentUserId, 'and', targetUserId);
+
+                // 1. Create or get existing conversation
+                const conv = await back4app.createConversation('pre_sales', [currentUserId, targetUserId], { productId: 'general' });
+                console.log('[VendorPage] Conversation response:', conv);
+
+                if (conv && (conv.objectId || conv.id)) {
+                    const convId = conv.objectId || conv.id;
+                    // 2. Send the message
+                    console.log('[VendorPage] Sending message to conversation:', convId);
+                    await back4app.sendMessage(convId, messageText);
+                    console.log('[VendorPage] Message sent successfully');
+
+                    setIsMessageModalOpen(false);
+                    setMessageText('');
+                    alert('Сообщение успешно отправлено!');
+                } else {
+                    throw new Error('Не удалось создать или найти беседу');
+                }
+            } else {
+                throw new Error('Пользователь или продавец не определены');
+            }
+        } catch (e: any) {
+            console.error('[VendorPage] Error in handleSendMessage:', e);
+            alert(`Ошибка при отправке сообщения: ${e.message || 'Неизвестная ошибка'}`);
+        }
+    };
+
     return (
         <div className="bg-slate-50 dark:bg-slate-900 min-h-screen">
             {/* Cover Image */}
@@ -152,7 +213,7 @@ export const VendorPage: React.FC = () => {
 
                     <div className="flex flex-col gap-3 min-w-[200px]">
                         <button
-                            onClick={() => vendor && toggleFollowVendor(vendor.id)}
+                            onClick={handleSubscribe}
                             className={`px-6 py-3 font-bold rounded-xl transition shadow-lg ${vendor && followedVendors.includes(vendor.id)
                                 ? 'bg-green-600 text-white hover:bg-green-700 shadow-green-200 dark:shadow-none'
                                 : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200 dark:shadow-none'
@@ -161,27 +222,23 @@ export const VendorPage: React.FC = () => {
                             {vendor && followedVendors.includes(vendor.id) ? 'Вы подписаны' : 'Подписаться'}
                         </button>
                         <button
-                            onClick={async () => {
+                            onClick={() => {
+                                console.log('[VendorPage] Message button clicked');
+                                console.log('[VendorPage] Current User:', user);
+                                console.log('[VendorPage] Current Vendor:', vendor);
+
                                 if (!user) {
                                     alert('Пожалуйста, войдите в систему, чтобы написать продавцу.');
                                     return;
                                 }
-                                if (vendor && user.id === vendor.vendorId) {
+                                const currentUserId = user.id || user.objectId;
+                                console.log('[VendorPage] Comparing currentUserId:', currentUserId, 'with vendor.id:', vendor?.id);
+
+                                if (vendor && currentUserId === vendor.id) {
                                     alert('Вы не можете написать самому себе.');
                                     return;
                                 }
-                                if (vendor) {
-                                    try {
-                                        // Call backend to create conversation
-                                        // Ensure we pass the backend User IDs (not our local mocks if they differ, but we are mapping correctly now)
-                                        // The context maps `user.id` to `objectId`.
-                                        await back4app.createConversation([user.id, vendor.vendorId], { type: 'pre_sales' });
-                                        alert('Чат создан! (Переход в чат скоро заработает)');
-                                    } catch (e) {
-                                        console.error(e);
-                                        alert('Ошибка при создании чата');
-                                    }
-                                }
+                                setIsMessageModalOpen(true);
                             }}
                             className="px-6 py-3 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition"
                         >
@@ -210,6 +267,47 @@ export const VendorPage: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* Message Modal */}
+            {isMessageModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl transform transition-all scale-100">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold dark:text-white">Написать сообщение</h3>
+                            <button
+                                onClick={() => setIsMessageModalOpen(false)}
+                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <div className="mb-4">
+                            <p className="text-sm text-gray-500 mb-2">Получатель: <span className="font-semibold text-gray-900 dark:text-white">{vendor.name}</span></p>
+                            <textarea
+                                className="w-full p-3 border border-gray-300 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-slate-700 dark:text-white h-32 resize-none"
+                                placeholder="Введите ваше сообщение..."
+                                value={messageText}
+                                onChange={(e) => setMessageText(e.target.value)}
+                            ></textarea>
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setIsMessageModalOpen(false)}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-slate-700 rounded-lg transition"
+                            >
+                                Отмена
+                            </button>
+                            <button
+                                onClick={handleSendMessage}
+                                disabled={!messageText.trim()}
+                                className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Отправить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

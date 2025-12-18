@@ -175,10 +175,18 @@ async function proxyApiRequest(path: string, method: 'GET' | 'POST' | 'PUT' | 'D
     // Inject Session Token if available
     try {
       const u = Parse.User.current();
-      if (u) {
-        const token = u.getSessionToken();
-        if (token) headers['X-Parse-Session-Token'] = token;
+      let token = u?.getSessionToken();
+
+      // Fallback for mock users who only exist in localStorage
+      if (!token && typeof window !== 'undefined') {
+        const saved = localStorage.getItem('market_user');
+        if (saved) {
+          const userObj = JSON.parse(saved);
+          token = userObj.sessionToken;
+        }
       }
+
+      if (token) headers['X-Parse-Session-Token'] = token;
     } catch { }
 
     const opts: RequestInit = { method, headers };
@@ -693,14 +701,44 @@ export async function updateAppeal(appealId: string, fields: Record<string, any>
 
 // ============ CHAT (Unified Chat Service) ============
 
-export async function createConversation(participants: string[], context?: any) {
+export async function createConversation(type: 'pre_sales' | 'order_support' | 'dispute', participants: string[], context?: any) {
   if (typeof window === 'undefined') return null;
   // Use proxy to our Express backend which handles logic
   try {
-    // payload: { participants: ['u1', 'v1'], context: {...} }
-    return await proxyApiRequest('/conversations', 'POST', { participants, context });
+    // payload: { type, participants: ['u1', 'v1'], context: {...} }
+    return await proxyApiRequest('/conversations', 'POST', { type, participants, context });
   } catch (err) {
     console.warn('[createConversation] Failed:', err);
+    throw err;
+  }
+}
+
+export async function sendMessage(conversationId: string, text: string, attachments?: string[]) {
+  if (typeof window === 'undefined') return null;
+  try {
+    return await proxyApiRequest('/messages', 'POST', { conversationId, text, attachments });
+  } catch (err) {
+    console.warn('[sendMessage] Failed:', err);
+    throw err;
+  }
+}
+
+export async function getConversations() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return await proxyApiRequest('/conversations', 'GET');
+  } catch (err) {
+    console.warn('[getConversations] Failed:', err);
+    throw err;
+  }
+}
+
+export async function getMessages(conversationId: string) {
+  if (typeof window === 'undefined') return null;
+  try {
+    return await proxyApiRequest(`/conversations/${conversationId}/messages`, 'GET');
+  } catch (err) {
+    console.warn('[getMessages] Failed:', err);
     throw err;
   }
 }

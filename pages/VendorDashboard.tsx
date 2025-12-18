@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, LayoutDashboard, ShoppingBag, ShoppingCart, Settings, Package, Edit2, Trash2, Loader, Upload, ArrowUpDown, CheckSquare, Square } from 'lucide-react';
+import { Plus, LayoutDashboard, ShoppingBag, ShoppingCart, Settings, Package, Edit2, Trash2, Loader, Upload, ArrowUpDown, CheckSquare, Square, MessageSquare } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import AddProductForm from '../components/AddProductForm';
 import { CsvUpload } from '../components/CsvUpload';
@@ -8,7 +8,9 @@ import * as back4app from '../services/back4appRest';
 import { calculateDelivery, formatDeliveryDate } from '../services/logistics';
 import { Truck } from 'lucide-react';
 
-type TabType = 'dashboard' | 'products' | 'orders' | 'settings';
+import { MessagesTab } from '../components/MessagesTab';
+
+type TabType = 'dashboard' | 'products' | 'orders' | 'messages' | 'settings';
 
 interface VendorProduct {
   objectId: string;
@@ -253,6 +255,12 @@ export const VendorDashboard: React.FC = () => {
               className={`w-full text-left px-3 py-2 rounded ${activeTab === 'orders' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-100'}`}
             >
               <ShoppingCart className="inline mr-2" /> Заказы
+            </button>
+            <button
+              onClick={() => setActiveTab('messages')}
+              className={`w-full text-left px-3 py-2 rounded ${activeTab === 'messages' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-100'}`}
+            >
+              <MessageSquare className="inline mr-2" /> Сообщения
             </button>
             <button
               onClick={() => setActiveTab('settings')}
@@ -529,7 +537,12 @@ export const VendorDashboard: React.FC = () => {
             </div>
           )}
 
-
+          {activeTab === 'messages' && (
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold">Сообщения</h2>
+              <MessagesTab />
+            </div>
+          )}
           {activeTab === 'settings' && (
             <div className="bg-white dark:bg-slate-800 p-6 rounded shadow">
               Настройки магазина

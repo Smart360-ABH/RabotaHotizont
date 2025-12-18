@@ -5,7 +5,7 @@ import { Product, CartItem, User, VendorPublicProfile, Review, OrderDetails, Ord
 import { api } from '../services/api';
 import * as back4app from '../services/back4appRest';
 import { MOCK_VENDORS, MOCK_REVIEWS } from '../constants';
-
+import { useUser } from './UserContext';
 interface MarketContextType {
   products: Product[];
   isLoading: boolean;
@@ -58,6 +58,7 @@ interface MarketContextType {
 const MarketContext = createContext<MarketContextType | undefined>(undefined);
 
 export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { user, updateUser } = useUser();
   // Data State
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -67,6 +68,7 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [orders, setOrders] = useState<OrderDetails[]>([]);
   const [users, setUsers] = useState<User[]>([
     { id: 'u1', name: 'Иван Иванов', email: 'user@store.com', role: 'user' },
+    { id: 'u_test', name: 'John Doe', email: 'john@example.com', role: 'user' },
     { id: 'v1', name: 'Vendor Tech', email: 'vendor@store.com', role: 'vendor', vendorId: 'v_tech' },
     { id: 'a1', name: 'Admin', email: 'admin@store.com', role: 'admin' }
   ]);
@@ -74,7 +76,6 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isLoading, setIsLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [user, setUser] = useState<User | null>(null);
 
   // UI State
   const [searchQuery, setSearchQuery] = useState('');
@@ -518,9 +519,8 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // Update the user who registered
     if (user) {
-      const updatedUser = { ...user, role: 'vendor' as const, vendorId: newVendorId };
-      setUser(updatedUser);
-      setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+      updateUser({ role: 'vendor' as const, vendorId: newVendorId });
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, role: 'vendor' as const, vendorId: newVendorId } : u));
     }
   };
 
@@ -539,16 +539,14 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // --- USERS ---
   const login = async (role: 'user' | 'admin' | 'vendor') => {
-    // In a real app, this would fetch from API. Here we just find/create mock
-    const mockUser = users.find(u => u.role === role);
-    if (mockUser) setUser(mockUser);
-    else {
-      // Fallback for demo if mock user deleted
-      setUser({ id: 'u_demo', name: 'Demo User', email: 'user@store.com', role });
-    }
+    // In a unified context, Login page calls useUser().login.
+    // This market.login is now a legacy placeholder or can be used for mock role switching if needed.
+    console.log('[MarketContext] Legacy login called for role:', role);
   };
 
-  const logout = () => setUser(null);
+  const logout = () => {
+    console.log('[MarketContext] Legacy logout called');
+  };
 
   const updateUserRole = (userId: string, role: 'user' | 'admin' | 'vendor') => {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u));

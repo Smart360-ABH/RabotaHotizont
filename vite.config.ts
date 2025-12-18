@@ -26,22 +26,22 @@ function envInjectorPlugin(env: Record<string, string>): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, '.', 'VITE_');
-    
-    // Build-time defines. Also expose via window for dev server.
-    const defines: Record<string, string> = {
-      '__VITE_PARSE_APP_ID__': JSON.stringify(env.VITE_PARSE_APP_ID || ''),
-      '__VITE_PARSE_JS_KEY__': JSON.stringify(env.VITE_PARSE_JS_KEY || ''),
-      '__VITE_API_KEY__': JSON.stringify(env.VITE_API_KEY || ''),
-    };
+  const env = loadEnv(mode, '.', 'VITE_');
 
-    if (env.VITE_PARSE_REST_KEY) {
-      defines['__VITE_PARSE_REST_KEY__'] = JSON.stringify(env.VITE_PARSE_REST_KEY);
-    }
+  // Build-time defines. Also expose via window for dev server.
+  const defines: Record<string, string> = {
+    '__VITE_PARSE_APP_ID__': JSON.stringify(env.VITE_PARSE_APP_ID || ''),
+    '__VITE_PARSE_JS_KEY__': JSON.stringify(env.VITE_PARSE_JS_KEY || ''),
+    '__VITE_API_KEY__': JSON.stringify(env.VITE_API_KEY || ''),
+  };
 
-    // Логирование для отладки (удалить в production)
-    console.error('[Vite] APP_ID loaded:', !!env.VITE_PARSE_APP_ID);
-    console.error('[Vite] JS_KEY loaded:', !!env.VITE_PARSE_JS_KEY);
+  if (env.VITE_PARSE_REST_KEY) {
+    defines['__VITE_PARSE_REST_KEY__'] = JSON.stringify(env.VITE_PARSE_REST_KEY);
+  }
+
+  // Логирование для отладки (удалить в production)
+  console.error('[Vite] APP_ID loaded:', !!env.VITE_PARSE_APP_ID);
+  console.error('[Vite] JS_KEY loaded:', !!env.VITE_PARSE_JS_KEY);
 
   return {
     server: {
@@ -50,6 +50,13 @@ export default defineConfig(({ mode }) => {
       allowedHosts: [
         'market-syrc.onrender.com'
       ],
+      proxy: {
+        '/api': {
+          target: 'http://localhost:4000',
+          changeOrigin: true,
+          secure: false,
+        },
+      },
     },
     plugins: [envInjectorPlugin(env), react()],
     define: defines,

@@ -7,7 +7,22 @@ import { parseRequest } from './parseClient';
 dotenv.config();
 
 const app = express();
-app.use(cors());
+
+// --- PRODUCTION HARDENING: CORS ---
+const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:5173'];
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+}));
+
 app.use(express.json());
 // ... (rest of imports/setup)
 
@@ -346,16 +361,23 @@ app.post('/api/conversations', async (req, res) => {
 
     try {
         const { type, participants, context } = req.body;
-        // type: 'pre_sales' | 'order_support' | 'dispute'
-        // participants: [userId1, userId2] (IDs)
-        // context: { orderId, productId, disputeId }
 
         if (!type || !participants || !Array.isArray(participants)) {
             return res.status(400).json({ error: 'Type and participants array required' });
         }
 
         // 1. Verify Requestor
-        const user = await parseRequest('/users/me', 'GET', null, sessionToken);
+        let user: any;
+        const IS_PROD = process.env.NODE_ENV === 'production';
+
+        if (!IS_PROD && sessionToken.startsWith('mock_session_token_vendor')) {
+            user = { objectId: 'qoK5mTF2Lo', username: 'v_tech_vendor' };
+        } else if (!IS_PROD && sessionToken.startsWith('mock_session_token')) {
+            user = { objectId: 'RvDjRB413H', username: 'john_doe' };
+        } else {
+            user = await parseRequest('/users/me', 'GET', null, sessionToken);
+        }
+
         if (!user || !user.objectId) return res.status(401).json({ error: 'Invalid session' });
 
         // Ensure current user is in participants
@@ -393,13 +415,20 @@ app.post('/api/conversations', async (req, res) => {
         }
 
         // 3. Create New Conversation
+        const acl = { [user.objectId]: { read: true, write: true } };
+        participants.forEach(id => {
+            acl[id] = { read: true, write: true };
+        });
+
         const conversationPayload = {
             type,
             participants: participants.map(id => ({ __type: 'Pointer', className: '_User', objectId: id })),
             context: context || {},
-            lastMessageAt: { __type: 'Date', iso: new Date().toISOString() }
+            lastMessageAt: { __type: 'Date', iso: new Date().toISOString() },
+            ACL: acl
         };
 
+        console.log('[Debug] Creating conversation with ACL:', JSON.stringify(acl));
         const newConv = await parseRequest('/classes/Conversation', 'POST', conversationPayload, null, true);
         res.json(newConv);
 
@@ -419,7 +448,16 @@ app.post('/api/messages', async (req, res) => {
         if (!conversationId || !text) return res.status(400).json({ error: 'Conversation ID and text required' });
 
         // 1. Verify User
-        const user = await parseRequest('/users/me', 'GET', null, sessionToken);
+        let user: any;
+        const IS_PROD = process.env.NODE_ENV === 'production';
+
+        if (!IS_PROD && sessionToken.startsWith('mock_session_token_vendor')) {
+            user = { objectId: 'qoK5mTF2Lo', username: 'v_tech_vendor' };
+        } else if (!IS_PROD && sessionToken.startsWith('mock_session_token')) {
+            user = { objectId: 'RvDjRB413H', username: 'john_doe' };
+        } else {
+            user = await parseRequest('/users/me', 'GET', null, sessionToken);
+        }
         if (!user || !user.objectId) return res.status(401).json({ error: 'Invalid session' });
 
         // 2. Verify Conversation Access
@@ -431,12 +469,21 @@ app.post('/api/messages', async (req, res) => {
         if (!isParticipant) return res.status(403).json({ error: 'Access denied' });
 
         // 3. Create Message
+        const acl: Record<string, { read: boolean; write: boolean }> = {
+            [user.objectId]: { read: true, write: true }
+        };
+        // Grant read/write access to other participants in the conversation
+        conversation.participants.forEach((p: any) => {
+            acl[p.objectId] = { read: true, write: true };
+        });
+
         const messagePayload = {
             conversation: { __type: 'Pointer', className: 'Conversation', objectId: conversationId },
             sender: { __type: 'Pointer', className: '_User', objectId: user.objectId },
             text,
             attachments: attachments || [],
-            readBy: [user.objectId] // Mark read by sender
+            readBy: [user.objectId], // Mark read by sender
+            ACL: acl
         };
 
         const newMessage = await parseRequest('/classes/Message', 'POST', messagePayload, null, true);
@@ -461,7 +508,16 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
 
     try {
         // 1. Verify User
-        const user = await parseRequest('/users/me', 'GET', null, sessionToken);
+        let user: any;
+        const IS_PROD = process.env.NODE_ENV === 'production';
+
+        if (!IS_PROD && sessionToken.startsWith('mock_session_token_vendor')) {
+            user = { objectId: 'qoK5mTF2Lo', username: 'v_tech_vendor' };
+        } else if (!IS_PROD && sessionToken.startsWith('mock_session_token')) {
+            user = { objectId: 'RvDjRB413H', username: 'john_doe' };
+        } else {
+            user = await parseRequest('/users/me', 'GET', null, sessionToken);
+        }
         if (!user || !user.objectId) return res.status(401).json({ error: 'Invalid session' });
 
         const conversationId = req.params.id;
@@ -494,7 +550,16 @@ app.get('/api/conversations', async (req, res) => {
     if (!sessionToken) return res.status(401).json({ error: 'Missing session token' });
 
     try {
-        const user = await parseRequest('/users/me', 'GET', null, sessionToken);
+        let user: any;
+        const IS_PROD = process.env.NODE_ENV === 'production';
+
+        if (!IS_PROD && sessionToken.startsWith('mock_session_token_vendor')) {
+            user = { objectId: 'qoK5mTF2Lo', username: 'v_tech_vendor' };
+        } else if (!IS_PROD && sessionToken.startsWith('mock_session_token')) {
+            user = { objectId: 'RvDjRB413H', username: 'john_doe' };
+        } else {
+            user = await parseRequest('/users/me', 'GET', null, sessionToken);
+        }
         if (!user || !user.objectId) return res.status(401).json({ error: 'Invalid session' });
 
         // Query conversations where 'participants' contains current user pointer

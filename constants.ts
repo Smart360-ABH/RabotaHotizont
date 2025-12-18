@@ -16,61 +16,61 @@ export const ABKHAZIA_CITIES = [
 ];
 
 export const MOCK_VENDORS: VendorPublicProfile[] = [
-    {
-        id: 'v_bookworld',
-        name: 'Книжный Мир',
-        description: 'Лучшая литература со всего света. Классика, современная проза и редкие издания.',
-        image: 'https://images.unsplash.com/photo-1550399105-c4db5fb85c18?auto=format&fit=crop&w=200&q=80',
-        coverImage: 'https://images.unsplash.com/photo-1507842217121-9e9f1929c5f7?auto=format&fit=crop&w=1200&q=80',
-        rating: 4.9,
-        joinedDate: '2023-01-15',
-        status: 'active',
-        vendorId: 'u_bookworld_owner',
-        revenue: 450000
-    },
-    {
-        id: 'v_tech',
-        name: 'TechnoPoint',
-        description: 'Официальный дилер электроники. Гарантия качества на все гаджеты.',
-        image: 'https://images.unsplash.com/photo-1531297461136-82lw9b44d940?auto=format&fit=crop&w=200&q=80',
-        coverImage: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
-        rating: 4.7,
-        joinedDate: '2023-03-10',
-        status: 'active',
-        vendorId: 'v1',
-        revenue: 1200000
-    },
-    {
-        id: 'v_style',
-        name: 'Fashion House',
-        description: 'Стильная одежда для всей семьи. Новые коллекции каждый сезон.',
-        image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=200&q=80',
-        coverImage: 'https://images.unsplash.com/photo-1445205170230-053b83016050?auto=format&fit=crop&w=1200&q=80',
-        rating: 4.8,
-        joinedDate: '2022-11-05',
-        status: 'active',
-        vendorId: 'u_style_owner',
-        revenue: 800000
-    },
-    {
-        id: 'v_local',
-        name: 'Дары Абхазии',
-        description: 'Натуральные продукты от местных фермеров. Мед, чай, специи.',
-        image: 'https://images.unsplash.com/photo-1606787366850-de6330128bfc?auto=format&fit=crop&w=200&q=80',
-        coverImage: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=1200&q=80',
-        rating: 5.0,
-        joinedDate: '2022-08-20',
-        status: 'active',
-        vendorId: 'u_local_owner',
-        revenue: 300000
-    }
+  {
+    id: 'v_bookworld',
+    name: 'Книжный Мир',
+    description: 'Лучшая литература со всего света. Классика, современная проза и редкие издания.',
+    image: 'https://images.unsplash.com/photo-1550399105-c4db5fb85c18?auto=format&fit=crop&w=200&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1507842217121-9e9f1929c5f7?auto=format&fit=crop&w=1200&q=80',
+    rating: 4.9,
+    joinedDate: '2023-01-15',
+    status: 'active',
+    vendorId: 'u_bookworld_owner',
+    revenue: 450000
+  },
+  {
+    id: 'v_tech',
+    name: 'TechnoPoint',
+    description: 'Официальный дилер электроники. Гарантия качества на все гаджеты.',
+    image: 'https://images.unsplash.com/photo-1531297461136-82lw9b44d940?auto=format&fit=crop&w=200&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
+    rating: 4.7,
+    joinedDate: '2023-03-10',
+    status: 'active',
+    vendorId: 'qoK5mTF2Lo',
+    revenue: 1200000
+  },
+  {
+    id: 'v_style',
+    name: 'Fashion House',
+    description: 'Стильная одежда для всей семьи. Новые коллекции каждый сезон.',
+    image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=200&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1445205170230-053b83016050?auto=format&fit=crop&w=1200&q=80',
+    rating: 4.8,
+    joinedDate: '2022-11-05',
+    status: 'active',
+    vendorId: 'u_style_owner',
+    revenue: 800000
+  },
+  {
+    id: 'v_local',
+    name: 'Дары Абхазии',
+    description: 'Натуральные продукты от местных фермеров. Мед, чай, специи.',
+    image: 'https://images.unsplash.com/photo-1606787366850-de6330128bfc?auto=format&fit=crop&w=200&q=80',
+    coverImage: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=1200&q=80',
+    rating: 5.0,
+    joinedDate: '2022-08-20',
+    status: 'active',
+    vendorId: 'u_local_owner',
+    revenue: 300000
+  }
 ];
 
 export const MOCK_REVIEWS: Review[] = [
-    { id: 'r1', productId: '1', userId: 'u10', userName: 'Елена С.', rating: 5, comment: 'Прекрасное издание! Бумага плотная, шрифт удобный. Доставили за один день.', date: '2024-03-10' },
-    { id: 'r2', productId: '1', userId: 'u11', userName: 'Игорь В.', rating: 4, comment: 'Книга отличная, но уголок был немного помят при транспортировке.', date: '2024-03-12' },
-    { id: 'r3', productId: '2', userId: 'u12', userName: 'Максим', rating: 5, comment: 'Телефон - пушка! Перешел с 11-го, разница колоссальная. Камера снимает как в кино.', date: '2024-03-15' },
-    { id: 'r4', productId: '3', userId: 'u13', userName: 'Анна К.', rating: 5, comment: 'Самый вкусный мед, который я пробовала! Чувствуется натуральность.', date: '2024-03-18' }
+  { id: 'r1', productId: '1', userId: 'u10', userName: 'Елена С.', rating: 5, comment: 'Прекрасное издание! Бумага плотная, шрифт удобный. Доставили за один день.', date: '2024-03-10' },
+  { id: 'r2', productId: '1', userId: 'u11', userName: 'Игорь В.', rating: 4, comment: 'Книга отличная, но уголок был немного помят при транспортировке.', date: '2024-03-12' },
+  { id: 'r3', productId: '2', userId: 'u12', userName: 'Максим', rating: 5, comment: 'Телефон - пушка! Перешел с 11-го, разница колоссальная. Камера снимает как в кино.', date: '2024-03-15' },
+  { id: 'r4', productId: '3', userId: 'u13', userName: 'Анна К.', rating: 5, comment: 'Самый вкусный мед, который я пробовала! Чувствуется натуральность.', date: '2024-03-18' }
 ];
 
 export const MOCK_PRODUCTS: Product[] = [

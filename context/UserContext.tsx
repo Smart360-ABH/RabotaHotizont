@@ -55,11 +55,28 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = (newUser: User) => {
+    // If it's a mock user or we are doing a fresh login, clear any existing Parse session
+    // to prevent sessionToken bleed-over in proxyApiRequest
+    try {
+      if (typeof window !== 'undefined') {
+        import('parse').then(({ default: Parse }) => {
+          Parse.User.logOut().catch(() => { });
+        });
+      }
+    } catch { }
+
     setUser(newUser);
     localStorage.setItem('market_user', JSON.stringify(newUser));
   };
 
   const logout = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        import('parse').then(({ default: Parse }) => {
+          Parse.User.logOut().catch(() => { });
+        });
+      }
+    } catch { }
     setUser(null);
     localStorage.removeItem('market_user');
   };
