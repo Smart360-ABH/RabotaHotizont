@@ -4,8 +4,9 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { Product, CartItem, User, VendorPublicProfile, Review, OrderDetails, OrderStatus, VendorProfile, Appeal } from '../types';
 import { api } from '../services/api';
 import * as back4app from '../services/back4appRest';
-import { MOCK_VENDORS, MOCK_REVIEWS } from '../constants';
+import { MOCK_VENDORS, MOCK_REVIEWS, MOCK_PRODUCTS } from '../constants';
 import { useUser } from './UserContext';
+import { config } from '../config';
 interface MarketContextType {
   products: Product[];
   isLoading: boolean;
@@ -86,9 +87,16 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // Load from Back4App REST API
+        if (config.USE_MOCK) {
+          setProducts(MOCK_PRODUCTS);
+          setVendors(MOCK_VENDORS);
+          setReviews(MOCK_REVIEWS);
+          setIsLoading(false);
+          return;
+        }
+
+        // Load products from Back4App
         const data = await back4app.getProducts(1000);
-        // back4app.getProducts may return either an array or a Parse-style { results: [...] }
         let results: any[] = [];
         if (Array.isArray(data)) results = data;
         else if (data && Array.isArray((data as any).results)) results = (data as any).results;
@@ -97,22 +105,27 @@ export const MarketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const mappedProducts = results.map((p: any) => ({
             id: p.objectId,
             title: p.title,
-            author: p.vendorName || p.author,
-            category: p.category || 'Electronics',
+            author: p.author || 'Unknown',
+            category: p.category || 'Other',
             price: p.price || 0,
             image: p.image && (typeof p.image === 'string' ? p.image : p.image.url || p.image.__type === 'File' && p.image.name ? p.image.url : p.image),
             description: p.description,
-            vendorId: p.vendorId, // Explicitly map vendorId
+            vendorId: p.vendorId,
             tags: p.tags || [],
-            reviewsCount: 0,
-            rating: 4.5,
-            isNew: false,
+            reviewsCount: p.reviewsCount || 0,
+            rating: p.rating || 5.0,
+            isNew: p.isNew || false,
             isFavorite: false,
             status: p.status || 'active'
           }));
           setProducts(mappedProducts);
         } else {
-          setProducts([]);
+          // If server is empty, and we are NOT in production, use mock
+          if (import.meta.env.MODE !== 'production') {
+            setProducts(MOCK_PRODUCTS);
+          } else {
+            setProducts([]);
+          }
         }
 
         // Load reviews: first try server, then localStorage, then MOCK

@@ -1,6 +1,0 @@
-// Добавьте это временно в браузерную консоль или в компонент для отладки
-
-console.log('🔍 Проверка переменных окружения:');
-console.log('VITE_PARSE_APP_ID:', import.meta.env.VITE_PARSE_APP_ID);
-console.log('VITE_PARSE_REST_KEY:', import.meta.env.VITE_PARSE_REST_KEY);
-console.log('import.meta.env:', import.meta.env);
